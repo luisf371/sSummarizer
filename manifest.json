@@ -1,0 +1,47 @@
+{
+  "manifest_version": 3,
+  "name": "AI Summarizer Pro",
+  "version": "2.0",
+  "description": "Intelligent web content summarization using AI. Supports web pages and YouTube videos with enhanced floating window interface.",
+  "icons": {
+    "16": "logo.png",
+    "32": "logo.png",
+    "48": "logo.png",
+    "128": "logo.png"
+  },
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://www.youtube.com/*",
+    "https://www.youtube.com/api/timedtext*",
+    "https://*/*",
+    "http://*/*"
+  ],
+  "options_page": "options.html",
+  "action": {
+    "default_icon": {
+      "48": "logo.png",
+      "128": "logo.png"
+    },
+    "default_title": "Summarize this page with AI"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_end"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["logo.png"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}

@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Summarizer - Settings</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>🤖 AI Summarizer Settings</h1>
+      <p class="subtitle">Configure your API settings to start summarizing web content</p>
+    </header>
+
+    <main>
+      <form id="options-form" class="settings-form">
+        <div class="form-section">
+          <h2>API Configuration</h2>
+          
+          <div class="form-group">
+            <label for="api-url" class="required">API Endpoint URL</label>
+            <input 
+              type="url" 
+              id="api-url" 
+              name="api-url" 
+              placeholder="https://api.openai.com/v1/chat/completions"
+              required
+              autocomplete="off"
+            >
+            <small class="help-text">Enter the full URL of your AI API endpoint</small>
+          </div>
+
+          <div class="form-group">
+            <label for="api-key" class="required">API Key</label>
+            <div class="password-input-wrapper">
+              <input 
+                type="password" 
+                id="api-key" 
+                name="api-key" 
+                placeholder="sk-..."
+                required
+                autocomplete="new-password"
+              >
+              <button type="button" id="toggle-password" class="toggle-password" title="Show/Hide API Key">
+                👁️
+              </button>
+            </div>
+            <small class="help-text">Your API key will be stored securely in your browser</small>
+          </div>
+
+          <div class="form-group">
+            <label for="model">Model Name</label>
+            <input 
+              type="text" 
+              id="model" 
+              name="model" 
+              placeholder="gpt-3.5-turbo"
+              autocomplete="off"
+            >
+            <small class="help-text">Specify the AI model to use (optional, defaults to gpt-3.5-turbo)</small>
+          </div>
+        </div>
+
+        <div class="form-section">
+          <h2>Summarization Settings</h2>
+          
+          <div class="form-group">
+            <label for="system-prompt">System Prompt</label>
+            <textarea 
+              id="system-prompt" 
+              name="system-prompt" 
+              rows="6" 
+              placeholder="You are a helpful assistant that summarizes content clearly and concisely. Focus on the main points and key takeaways."
+            ></textarea>
+            <small class="help-text">
+              Customize how the AI should summarize content. Leave blank for default behavior.
+              <br>
+              <strong>Character limit:</strong> <span id="prompt-counter">0</span>/2000
+            </small>
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <button type="submit" class="save-button">
+            <span class="button-text">Save Settings</span>
+          </button>
+          <button type="button" id="test-connection" class="test-button">
+            Test Connection
+          </button>
+        </div>
+      </form>
+
+      <div class="info-section">
+        <h3>ℹ️ How to Use</h3>
+        <ol>
+          <li>Configure your API settings above</li>
+          <li>Navigate to any webpage or YouTube video</li>
+          <li>Click the extension icon in your browser toolbar</li>
+          <li>Wait for the AI to analyze and summarize the content</li>
+          <li>View the summary in the floating window</li>
+        </ol>
+        
+        <div class="supported-sites">
+          <h4>Supported Content Types</h4>
+          <ul>
+            <li>📄 Regular web pages (extracts visible text)</li>
+            <li>🎥 YouTube videos (uses auto-generated transcripts)</li>
+            <li>📰 News articles and blog posts</li>
+            <li>📚 Documentation and guides</li>
+          </ul>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="options.js"></script>
+</body>
+</html>
