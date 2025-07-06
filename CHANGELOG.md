@@ -1,5 +1,8 @@
 # Changelog
 
+## v1.1 - Minor Option Enhancement
+  - Modified System Prompt box to calculate based on chrome.storage.sync limitation of 8Kb of data.
+
 ## v1.1 - Major Refactor and UI/UX Overhaul
 - **Code Refactoring**:
   - Modularized content scraping functions into a separate `scripts/content-scraper.js` file.

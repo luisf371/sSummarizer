@@ -32,8 +32,17 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // Setup additional UI features
   setupPasswordToggle();
-  setupCharacterCounter();
+  setupByteCounter();
   setupTestConnection();
+ 
+  /**
+   * Calculates the UTF-8 byte length of a string.
+   * @param {string} str The string to measure.
+   * @returns {number} The number of bytes.
+   */
+  function getByteLength(str) {
+    return new TextEncoder().encode(str).length;
+  }
 
   /**
    * Load saved options from storage
@@ -50,7 +59,11 @@ document.addEventListener('DOMContentLoaded', function() {
         if (result.apiKey) apiKeyInput.value = result.apiKey;
         if (result.apiUrl) apiUrlInput.value = result.apiUrl;
         if (result.model) modelInput.value = result.model;
-        if (result.systemPrompt) systemPromptInput.value = result.systemPrompt;
+        if (result.systemPrompt) {
+          systemPromptInput.value = result.systemPrompt;
+          // Manually trigger the input event to update the counter upon loading
+          systemPromptInput.dispatchEvent(new Event('input', { bubbles: true }));
+        }
         if (result.enableStreaming) enableStreamingInput.checked = result.enableStreaming;
         if (result.defaultFontSize) defaultFontSizeInput.value = result.defaultFontSize;
 
@@ -84,10 +97,10 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // System prompt validation
     systemPromptInput.addEventListener('input', function() {
-      validateSystemPrompt(this.value.trim());
+      validateSystemPrompt(this.value);
     });
   }
-
+ 
   /**
    * Validate API URL format
    */
@@ -153,9 +166,11 @@ document.addEventListener('DOMContentLoaded', function() {
    */
   function validateSystemPrompt(prompt) {
     const promptInput = systemPromptInput;
-    
-    if (prompt && prompt.length > 2000) {
-      setFieldError(promptInput, 'System prompt is too long (max 2000 characters)');
+    const maxBytes = 8000; // Leave a small buffer
+    const currentBytes = getByteLength(prompt);
+
+    if (currentBytes > maxBytes) {
+      setFieldError(promptInput, `System prompt is too large (max ${maxBytes} bytes)`);
       return false;
     }
 
@@ -288,21 +303,23 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   /**
-   * Setup character counter for system prompt
+   * Setup byte counter for system prompt
    */
-  function setupCharacterCounter() {
+  function setupByteCounter() {
     const counter = document.getElementById('prompt-counter');
     if (!counter) return;
 
+    const maxBytes = 8000;
+
     function updateCounter() {
-      const length = systemPromptInput.value.length;
-      counter.textContent = length;
+      const currentBytes = getByteLength(systemPromptInput.value);
+      counter.textContent = currentBytes;
       
-      // Change color based on length
-      if (length > 1800) {
-        counter.style.color = '#e74c3c';
-      } else if (length > 1500) {
-        counter.style.color = '#f39c12';
+      // Change color based on byte usage
+      if (currentBytes > maxBytes) {
+        counter.style.color = '#e74c3c'; // Error
+      } else if (currentBytes > maxBytes * 0.9) {
+        counter.style.color = '#f39c12'; // Warning
       } else {
         counter.style.color = '#3498db';
       }
