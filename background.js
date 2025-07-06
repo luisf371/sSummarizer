@@ -66,55 +66,59 @@ async function handleIconClick(tab) {
 
     // Try to extract captions using content script injection
     console.log('[Background] Injecting YouTube caption extractor');
+    // Inject the scraper script, then execute the function
     chrome.scripting.executeScript({
       target: { tabId: tab.id },
-      function: extractYouTubeCaptions
-    }, (results) => {
-      console.log('[Background] YouTube caption extraction results:', results);
-      if (results && results[0] && results[0].result) {
-        const captionText = results[0].result;
-        if (captionText && captionText.trim().length > 0) {
-          console.log('[Background] Successfully extracted captions, length:', captionText.length);
-          
-          
-          makeApiCall(captionText, uniqueId);
-        } else {
-          chrome.tabs.sendMessage(tab.id, { action: 'hideLoading', uniqueId });
-          chrome.tabs.sendMessage(tab.id, {
-            action: 'appendToFloatingWindow',
-            content: '[Info] No captions found on this YouTube video. Try a video with auto-generated captions.',
-            uniqueId
-          });
+      files: ['scripts/content-scraper.js']
+    }, () => {
+      chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        function: () => extractYouTubeCaptions() // This function is from the injected script
+      }, (results) => {
+        console.log('[Background] YouTube caption extraction results:', results);
+        if (chrome.runtime.lastError) {
+          console.error('[Background] Script injection error:', chrome.runtime.lastError.message);
+          handleApiError(uniqueId, `Failed to extract content: ${chrome.runtime.lastError.message}`);
+          return;
         }
-      } else {
-        chrome.tabs.sendMessage(tab.id, { action: 'hideLoading', uniqueId });
-        chrome.tabs.sendMessage(tab.id, {
-          action: 'appendToFloatingWindow',
-          content: '[Info] Could not extract captions from this YouTube video.',
-          uniqueId
-        });
-      }
-    });
 
+        if (results && results[0] && results[0].result) {
+          const captionText = results[0].result;
+          if (captionText && captionText.trim().length > 0) {
+            console.log('[Background] Successfully extracted captions, length:', captionText.length);
+            makeApiCall(captionText, uniqueId);
+          } else {
+            handleApiError(uniqueId, 'No captions found on this YouTube video. Try a video with auto-generated captions.');
+          }
+        } else {
+          handleApiError(uniqueId, 'Could not extract captions from this YouTube video.');
+        }
+      });
+    });
   } else {
     console.log('[Background] Non-YouTube page – injecting getPageContent');
+    // Inject the scraper script, then execute the function
     chrome.scripting.executeScript({
       target: { tabId: tab.id },
-      function: getPageContent
-    }, (results) => {
-      console.log('[Background] getPageContent results:', results);
-      for (const { result } of results) {
-        if (result) {
-          makeApiCall(result, uniqueId);
-        } else {
-          chrome.tabs.sendMessage(tab.id, { action: 'hideLoading', uniqueId });
-          chrome.tabs.sendMessage(tab.id, {
-            action: 'appendToFloatingWindow',
-            content: '[Error] Could not get content from this page.',
-            uniqueId
-          });
+      files: ['scripts/content-scraper.js']
+    }, () => {
+      chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        function: () => getPageContent() // This function is from the injected script
+      }, (results) => {
+        console.log('[Background] getPageContent results:', results);
+        if (chrome.runtime.lastError) {
+          console.error('[Background] Script injection error:', chrome.runtime.lastError.message);
+          handleApiError(uniqueId, `Failed to get page content: ${chrome.runtime.lastError.message}`);
+          return;
         }
-      }
+
+        if (results && results[0] && results[0].result) {
+          makeApiCall(results[0].result, uniqueId);
+        } else {
+          handleApiError(uniqueId, 'Could not get content from this page.');
+        }
+      });
     });
   }
 }
@@ -301,11 +305,11 @@ async function makeApiCall(text, uniqueId) {
     }
   }
 
-  const { apiUrl, model, systemPrompt, apiKey } = await chrome.storage.sync.get(
-    ['apiUrl', 'model', 'systemPrompt', 'apiKey']
+  const { apiUrl, model, systemPrompt, apiKey, enableStreaming } = await chrome.storage.sync.get(
+    ['apiUrl', 'model', 'systemPrompt', 'apiKey', 'enableStreaming']
   );
   
-  console.log('[API] retrieved settings:', { apiUrl, model, systemPrompt, apiKey: !!apiKey });
+  console.log('[API] retrieved settings:', { apiUrl, model, systemPrompt, apiKey: !!apiKey, enableStreaming });
   
   // Validate configuration
   if (!apiUrl || !apiKey) {
@@ -333,10 +337,10 @@ async function makeApiCall(text, uniqueId) {
         { role: 'system', content: systemPrompt?.trim() || 'You are a helpful assistant that summarizes content concisely.' },
         { role: 'user', content: processedText }
       ],
-      stream: false // Disable streaming for now
+      stream: enableStreaming || false
     };
 
-    console.log('[API] Making non-streaming request');
+    console.log('[API] Making request with streaming =', enableStreaming);
     const response = await fetch(apiUrl, {
       method: 'POST',
       headers: {
@@ -356,32 +360,61 @@ async function makeApiCall(text, uniqueId) {
     }
 
     console.log('[API] response.status=', response.status);
-    
-    const responseData = await response.json();
-    console.log('[API] Full response:', responseData);
-    
+
     const tab = tabIdMap.get(uniqueId);
     if (!tab) {
       console.error('[API] No tab found for uniqueId:', uniqueId);
       return;
     }
+    
+    if (enableStreaming && response.body) {
+      console.log('[API] Processing stream...');
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+      let buffer = '';
 
-    // Handle the complete response
-    if (responseData.choices?.[0]?.message?.content) {
-      const content = responseData.choices[0].message.content;
-      console.log('[API] Sending complete response, length:', content.length);
-      
+      // Send the initial part of the summary message
       await sendMessageSafely(tab, {
         action: 'appendToFloatingWindow',
-        content: `\n\n**AI Summary:**\n\n${content}`,
+        content: ``,
         uniqueId
       });
-      
-      await sendMessageSafely(tab, { action: 'hideLoading', uniqueId });
-      tabIdMap.delete(uniqueId);
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          console.log('[API] Stream finished');
+          if (buffer.length > 0) {
+            processBuffer(buffer, uniqueId);
+          }
+          await sendMessageSafely(tab, { action: 'hideLoading', uniqueId });
+          tabIdMap.delete(uniqueId);
+          break;
+        }
+        buffer += decoder.decode(value, { stream: true });
+        buffer = processBuffer(buffer, uniqueId);
+      }
     } else {
-      console.error('[API] No content in response:', responseData);
-      throw new Error('No content received from API');
+      // Handle non-streaming response
+      const responseData = await response.json();
+      console.log('[API] Full response:', responseData);
+
+      if (responseData.choices?.[0]?.message?.content) {
+        const content = responseData.choices[0].message.content;
+        console.log('[API] Sending complete response, length:', content.length);
+        
+        await sendMessageSafely(tab, {
+          action: 'appendToFloatingWindow',
+          content: content,
+          uniqueId
+        });
+        
+        await sendMessageSafely(tab, { action: 'hideLoading', uniqueId });
+        tabIdMap.delete(uniqueId);
+      } else {
+        console.error('[API] No content in response:', responseData);
+        throw new Error('No content received from API');
+      }
     }
   } catch (err) {
     clearTimeout(timeoutId);
@@ -421,19 +454,31 @@ async function handleApiError(uniqueId, message) {
 }
 
 function processBuffer(buffer, uniqueId) {
-  let idx;
-  while ((idx = buffer.indexOf('\n')) !== -1) {
-    const line = buffer.slice(0, idx).trim();
-    if (line.startsWith('data: ')) {
-      handleJsonLine(line.slice(6), uniqueId);
+    // Process multiple data chunks in a single buffer
+    const lines = buffer.split('\n');
+    buffer = lines.pop(); // Keep the last, possibly incomplete, line
+
+    for (const line of lines) {
+        if (line.trim().startsWith('data: ')) {
+            const jsonLine = line.trim().substring(5).trim();
+            if (jsonLine === '[DONE]') {
+                console.log('[API] Stream DONE signal received.');
+                const tab = tabIdMap.get(uniqueId);
+                if (tab) {
+                    chrome.tabs.sendMessage(tab, { action: 'hideLoading', uniqueId });
+                    tabIdMap.delete(uniqueId);
+                }
+                continue;
+            }
+            handleJsonLine(jsonLine, uniqueId);
+        }
     }
-    buffer = buffer.slice(idx + 1);
-  }
-  return buffer;
+    return buffer;
 }
 
 function handleJsonLine(jsonLine, uniqueId) {
   try {
+    if (!jsonLine) return;
     console.log('[API] Processing JSON line:', jsonLine.substring(0, 200));
     const data = JSON.parse(jsonLine);
     const tab = tabIdMap.get(uniqueId);
@@ -553,94 +598,3 @@ function parseTranscriptXML(xml, preserveFormatting = false) {
   }
 }
 
-/**
- * Function to be injected into YouTube pages to extract captions
- * This runs in the context of the YouTube page
- */
-function extractYouTubeCaptions() {
-  console.log('[YT Extractor] Starting caption extraction');
-  
-  try {
-    // Method 1: Try to find any existing caption text in the DOM first
-    const captionElements = document.querySelectorAll(
-      '.ytp-caption-segment, .captions-text, .caption-window, [class*="caption"], [class*="subtitle"]'
-    );
-    
-    if (captionElements.length > 0) {
-      console.log('[YT Extractor] Found caption elements in DOM:', captionElements.length);
-      const text = Array.from(captionElements)
-        .map(el => el.textContent?.trim())
-        .filter(text => text && text.length > 0)
-        .join(' ');
-      
-      if (text.length > 50) { // Only return if we have substantial text
-        console.log('[YT Extractor] Extracted caption text, length:', text.length);
-        return text;
-      }
-    }
-    
-    // Method 2: Try to find transcript segments that might already be loaded
-    const transcriptItems = document.querySelectorAll(
-      '[data-testid="transcript-segment"], .ytd-transcript-segment-renderer, .ytd-transcript-body-renderer [role="button"]'
-    );
-    
-    if (transcriptItems.length > 0) {
-      console.log('[YT Extractor] Found transcript segments:', transcriptItems.length);
-      const text = Array.from(transcriptItems)
-        .map(item => item.textContent?.trim())
-        .filter(text => text && text.length > 0)
-        .join(' ');
-      
-      if (text.length > 50) {
-        console.log('[YT Extractor] Extracted transcript text, length:', text.length);
-        return text;
-      }
-    }
-    
-    // Method 3: Try to extract from ytInitialPlayerResponse in the page
-    if (window.ytInitialPlayerResponse) {
-      console.log('[YT Extractor] Found ytInitialPlayerResponse');
-      const captions = window.ytInitialPlayerResponse.captions;
-      if (captions?.playerCaptionsTracklistRenderer?.captionTracks) {
-        const tracks = captions.playerCaptionsTracklistRenderer.captionTracks;
-        console.log('[YT Extractor] Found caption tracks:', tracks.length);
-        
-        // Find English auto-generated track
-        let track = tracks.find(t => t.languageCode === 'en' && t.kind === 'asr');
-        if (!track) track = tracks.find(t => t.languageCode === 'en');
-        if (!track && tracks.length > 0) track = tracks[0];
-        
-        if (track?.baseUrl) {
-          console.log('[YT Extractor] Found caption track URL, but cannot fetch due to CORS');
-          // Signal that captions exist but we need to use fallback
-        }
-      }
-    }
-    
-    // Method 4: Try to extract video title and description as fallback
-    const title = document.querySelector('h1.ytd-video-primary-info-renderer, #title h1, .title')?.textContent?.trim();
-    const description = document.querySelector('#description, .description, #meta-contents')?.textContent?.trim();
-    
-    if (title) {
-      console.log('[YT Extractor] Using title and description as fallback');
-      let fallbackText = `Video Title: ${title}`;
-      if (description && description.length > 0) {
-        // Limit description to first 1000 characters
-        const shortDesc = description.length > 1000 ? description.substring(0, 1000) + '...' : description;
-        fallbackText += `\n\nDescription: ${shortDesc}`;
-      }
-      return fallbackText;
-    }
-    
-    console.log('[YT Extractor] No captions or content found');
-    return null;
-    
-  } catch (error) {
-    console.error('[YT Extractor] Error:', error);
-    return null;
-  }
-}
-
-function getPageContent() {
-  return document.body.innerText;
-}

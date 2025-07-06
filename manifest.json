@@ -40,7 +40,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["logo.png"],
+      "resources": ["logo.png", "scripts/content-scraper.js"],
       "matches": ["<all_urls>"]
     }
   ]

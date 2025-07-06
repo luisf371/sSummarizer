@@ -5,6 +5,8 @@ document.addEventListener('DOMContentLoaded', function() {
   const apiUrlInput = document.getElementById('api-url');
   const modelInput = document.getElementById('model');
   const systemPromptInput = document.getElementById('system-prompt');
+  const enableStreamingInput = document.getElementById('enable-streaming');
+  const defaultFontSizeInput = document.getElementById('default-font-size');
   const saveButton = document.querySelector('button[type="submit"]');
   
   // Create status message element
@@ -38,7 +40,7 @@ document.addEventListener('DOMContentLoaded', function() {
    */
   function loadSavedOptions() {
     try {
-      chrome.storage.sync.get(['apiKey', 'apiUrl', 'model', 'systemPrompt'], function(result) {
+      chrome.storage.sync.get(['apiKey', 'apiUrl', 'model', 'systemPrompt', 'enableStreaming', 'defaultFontSize'], function(result) {
         if (chrome.runtime.lastError) {
           showStatus('Error loading saved settings: ' + chrome.runtime.lastError.message, 'error');
           return;
@@ -49,6 +51,9 @@ document.addEventListener('DOMContentLoaded', function() {
         if (result.apiUrl) apiUrlInput.value = result.apiUrl;
         if (result.model) modelInput.value = result.model;
         if (result.systemPrompt) systemPromptInput.value = result.systemPrompt;
+        if (result.enableStreaming) enableStreamingInput.checked = result.enableStreaming;
+        if (result.defaultFontSize) defaultFontSizeInput.value = result.defaultFontSize;
+
 
         console.log('[Options] Loaded saved settings');
       });
@@ -195,6 +200,8 @@ document.addEventListener('DOMContentLoaded', function() {
     const apiUrl = apiUrlInput.value.trim();
     const model = modelInput.value.trim();
     const systemPrompt = systemPromptInput.value.trim();
+    const enableStreaming = enableStreamingInput.checked;
+    const defaultFontSize = parseInt(defaultFontSizeInput.value, 10);
 
     // Validate all fields
     const isApiUrlValid = validateApiUrl(apiUrl);
@@ -202,7 +209,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const isModelValid = validateModel(model);
     const isSystemPromptValid = validateSystemPrompt(systemPrompt);
 
-    if (!isApiUrlValid || !isApiKeyValid || !isModelValid || !isSystemPromptValid) {
+    if (!isApiUrlValid || !isApiKeyValid || !isModelValid || !isSystemPromptValid || (defaultFontSize && (defaultFontSize < 8 || defaultFontSize > 24))) {
       showStatus('Please fix the validation errors above', 'error');
       return;
     }
@@ -215,9 +222,11 @@ document.addEventListener('DOMContentLoaded', function() {
     // Save to storage
     chrome.storage.sync.set({ 
       apiKey, 
-      apiUrl, 
-      model: model || 'gpt-3.5-turbo', 
-      systemPrompt: systemPrompt || 'You are a helpful assistant that summarizes content clearly and concisely.' 
+      apiUrl,
+      model: model || 'gpt-3.5-turbo',
+      systemPrompt: systemPrompt || 'You are a helpful assistant that summarizes content clearly and concisely.',
+      enableStreaming,
+      defaultFontSize: defaultFontSize || 14
     }, function() {
       // Reset button state
       saveButton.disabled = false;

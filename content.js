@@ -7,9 +7,11 @@ let floatingWindows = new Map();
 let isMinimized = new Map();
 let textSizes = new Map();
 let windowPositions = new Map();
-
-// Configuration constants
-const UI_CONFIG = {
+let windowSizes = new Map();
+let contentBuffers = new Map();
+ 
+ // Configuration constants
+ const UI_CONFIG = {
   DEFAULT_FONT_SIZE: 14,
   MIN_FONT_SIZE: 8,
   MAX_FONT_SIZE: 24,
@@ -47,9 +49,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 /**
  * Create a floating window with improved positioning and error handling
  */
-function createFloatingWindow(uniqueId) {
+async function createFloatingWindow(uniqueId) {
   try {
-    // Clean up existing window if it exists
     if (floatingWindows.has(uniqueId)) {
       const existingWindow = floatingWindows.get(uniqueId);
       if (existingWindow && existingWindow.parentNode) {
@@ -58,12 +59,24 @@ function createFloatingWindow(uniqueId) {
       cleanupWindowState(uniqueId);
     }
 
-    // Calculate position for new window (avoid overlapping)
-    const position = calculateWindowPosition();
-    
+    const { defaultFontSize } = await chrome.storage.sync.get('defaultFontSize');
+    const initialFontSize = defaultFontSize || UI_CONFIG.DEFAULT_FONT_SIZE;
+
+    const savedState = await chrome.storage.local.get(['windowState']);
+    const state = savedState.windowState || {};
+    const position = { top: state.top || 20, left: state.left || null };
+    const size = { width: state.width || UI_CONFIG.DEFAULT_WIDTH, height: state.height || UI_CONFIG.DEFAULT_HEIGHT };
+
+    // If right is not saved, calculate it based on width
+    if (position.left === null) {
+        position.right = 20;
+    }
+
     const floatingWindow = document.createElement('div');
+    const positionStyle = position.left !== null ? `top: ${position.top}px; left: ${position.left}px;` : `top: ${position.top}px; right: ${position.right}px;`;
+
     floatingWindow.innerHTML = `
-      <div id="floating-window-${uniqueId}" style="position: fixed; top: ${position.top}px; right: ${position.right}px; z-index: 9999; background-color: #1e1e1e; color: #cfcfcf; border: 1px solid #333; border-radius: 8px; width: ${UI_CONFIG.DEFAULT_WIDTH}px; height: ${UI_CONFIG.DEFAULT_HEIGHT}px; display: flex; flex-direction: column; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; backdrop-filter: blur(10px);">
+      <div id="floating-window-${uniqueId}" style="position: fixed; ${positionStyle} z-index: 9999; background-color: #1e1e1e; color: #cfcfcf; border: 1px solid #333; border-radius: 8px; width: ${size.width}px; height: ${size.height}px; display: flex; flex-direction: column; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; backdrop-filter: blur(10px);">
         <div id="title-bar-${uniqueId}" style="padding: 12px 16px; background: linear-gradient(135deg, #2e2e2e, #3a3a3a); cursor: move; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #444; border-radius: 8px 8px 0 0; user-select: none;">
           <span style="font-weight: 600; color: #f0f0f0; font-size: 14px;">AI Summarizer</span>
           <div style="display: flex; align-items: center; gap: 8px;">
@@ -75,7 +88,7 @@ function createFloatingWindow(uniqueId) {
             <button id="close-btn-${uniqueId}" style="background: none; border: none; color: #f0f0f0; cursor: pointer; padding: 4px 8px; border-radius: 4px; transition: background-color 0.2s;" title="Close">×</button>
           </div>
         </div>
-        <div id="content-${uniqueId}" style="flex-grow: 1; overflow-y: auto; padding: 16px; font-size: ${UI_CONFIG.DEFAULT_FONT_SIZE}px; background-color: #1e1e1e; color: #cfcfcf; position: relative; line-height: 1.5; word-wrap: break-word;">
+        <div id="content-${uniqueId}" style="flex-grow: 1; overflow-y: auto; padding: 16px; font-size: ${initialFontSize}px; background-color: #1e1e1e; color: #cfcfcf; position: relative; line-height: 1.5; word-wrap: break-word;">
           <div id="loading-overlay-${uniqueId}" style="display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.7); display: flex; justify-content: center; align-items: center; border-radius: 0 0 8px 8px;">
             <div class="spinner" style="border: 3px solid rgba(255,255,255,0.1); border-left-color: #4a9eff; border-radius: 50%; width: 32px; height: 32px; animation: spin 1s linear infinite;"></div>
           </div>
@@ -144,7 +157,7 @@ function createFloatingWindow(uniqueId) {
     // Initialize state
     floatingWindows.set(uniqueId, floatingWindow);
     isMinimized.set(uniqueId, false);
-    textSizes.set(uniqueId, UI_CONFIG.DEFAULT_FONT_SIZE);
+    textSizes.set(uniqueId, initialFontSize);
     windowPositions.set(uniqueId, position);
 
     const win = floatingWindow.querySelector(`#floating-window-${uniqueId}`);
@@ -203,11 +216,11 @@ function setupWindowEventListeners(uniqueId, win) {
     }
     
     if (increaseFontBtn) {
-      increaseFontBtn.addEventListener('click', () => changeFontSize(uniqueId, 2));
+      increaseFontBtn.addEventListener('click', () => changeFontSize(uniqueId, 1));
     }
     
     if (decreaseFontBtn) {
-      decreaseFontBtn.addEventListener('click', () => changeFontSize(uniqueId, -2));
+      decreaseFontBtn.addEventListener('click', () => changeFontSize(uniqueId, -1));
     }
     
   } catch (error) {
@@ -239,6 +252,8 @@ function cleanupWindowState(uniqueId) {
   isMinimized.delete(uniqueId);
   textSizes.delete(uniqueId);
   windowPositions.delete(uniqueId);
+  windowSizes.delete(uniqueId);
+  contentBuffers.delete(uniqueId);
 }
 
 /**
@@ -267,7 +282,8 @@ function changeFontSize(uniqueId, delta) {
     if (newSize !== currentSize) {
       textSizes.set(uniqueId, newSize);
       content.style.fontSize = `${newSize}px`;
-      console.log(`[Content] Font size changed to ${newSize}px for window ${uniqueId}`);
+      chrome.storage.sync.set({ defaultFontSize: newSize });
+      console.log(`[Content] Font size changed and saved: ${newSize}px`);
     }
   } catch (error) {
     console.error('[Content] Error changing font size:', error);
@@ -279,37 +295,41 @@ function changeFontSize(uniqueId, delta) {
  */
 function toggleMinimize(uniqueId) {
   try {
-    const win = floatingWindows.get(uniqueId);
-    if (!win) {
+    const wrapper = floatingWindows.get(uniqueId);
+    if (!wrapper) {
       console.warn(`[Content] Window ${uniqueId} not found for minimize toggle`);
       return;
     }
-    
+    const win = wrapper.querySelector(`#floating-window-${uniqueId}`);
     const content = win.querySelector(`#content-${uniqueId}`);
     const handle = win.querySelector(`#resize-handle-${uniqueId}`);
     const minimizeBtn = win.querySelector(`#minimize-btn-${uniqueId}`);
     
-    if (!content || !handle) {
+    if (!content || !handle || !win) {
       console.warn(`[Content] Required elements not found for window ${uniqueId}`);
       return;
     }
     
     const isCurrentlyMinimized = isMinimized.get(uniqueId) || false;
-    
+
     if (isCurrentlyMinimized) {
       // Restore window
-      content.style.display = 'block';
+      const lastSize = windowSizes.get(uniqueId);
+      content.style.display = ''; // Restore to default display
       handle.style.display = 'block';
-      win.style.height = `${UI_CONFIG.DEFAULT_HEIGHT}px`;
+      if(lastSize) {
+        win.style.height = `${lastSize.height}px`;
+      }
       if (minimizeBtn) minimizeBtn.textContent = '−';
       if (minimizeBtn) minimizeBtn.title = 'Minimize';
       isMinimized.set(uniqueId, false);
       console.log(`[Content] Restored window ${uniqueId}`);
     } else {
       // Minimize window
+      windowSizes.set(uniqueId, { width: win.offsetWidth, height: win.offsetHeight });
       content.style.display = 'none';
       handle.style.display = 'none';
-      win.style.height = 'auto';
+      win.style.height = 'auto'; // Let the title bar define the height
       if (minimizeBtn) minimizeBtn.textContent = '□';
       if (minimizeBtn) minimizeBtn.title = 'Restore';
       isMinimized.set(uniqueId, true);
@@ -325,8 +345,6 @@ function toggleMinimize(uniqueId) {
  */
 function handleMessage(content, uniqueId) {
   try {
-    console.log(`[Content] handleMessage called with content length: ${content?.length}, uniqueId: ${uniqueId}`);
-    
     const win = floatingWindows.get(uniqueId);
     if (!win) {
       console.warn(`[Content] Window ${uniqueId} not found for message handling`);
@@ -338,14 +356,13 @@ function handleMessage(content, uniqueId) {
       console.warn(`[Content] Content element not found for window ${uniqueId}`);
       return;
     }
+
+    let currentBuffer = contentBuffers.get(uniqueId) || '';
+    currentBuffer += content;
+    contentBuffers.set(uniqueId, currentBuffer);
     
-    // Sanitize content to prevent XSS while preserving basic formatting
-    const sanitizedContent = sanitizeContent(content);
-    console.log(`[Content] Sanitized content: ${sanitizedContent.substring(0, 100)}...`);
-    
-    // Append content
-    contentElement.innerHTML += sanitizedContent;
-    console.log(`[Content] Content appended to window ${uniqueId}`);
+    // Sanitize and render the entire buffer
+    contentElement.innerHTML = sanitizeContent(currentBuffer);
     
     // Auto-scroll to bottom
     contentElement.scrollTop = contentElement.scrollHeight;
@@ -432,7 +449,7 @@ function convertMarkdownToHtml(markdown) {
   
   // Line breaks
   html = html.replace(/\n\n/g, '</p><p>');
-  html = html.replace(/\n/g, '<br>');
+  html = html.replace(/\n/g, ' '); // Replace remaining single newlines with a space
   
   // Wrap in paragraphs if not already wrapped
   if (!html.includes('<p>') && !html.includes('<h') && !html.includes('<ul>') && !html.includes('<ol>')) {
@@ -492,29 +509,38 @@ function hideLoading(uniqueId) {
 }
 
 function makeDraggable(el, handle) {
-  let x0=0,y0=0,x1=0,y1=0;
-  handle.onmousedown = e => {
-    e.preventDefault();
-    x1 = e.clientX; y1 = e.clientY;
-    document.onmousemove = drag;
-    document.onmouseup   = () => { document.onmousemove = null; document.onmouseup = null; };
-  };
-  function drag(e) {
-    e.preventDefault();
-    x0 = x1 - e.clientX; y0 = y1 - e.clientY;
-    x1 = e.clientX;     y1 = e.clientY;
-    el.style.top  = (el.offsetTop  - y0) + 'px';
-    el.style.left = (el.offsetLeft - x0) + 'px';
-  }
+    let x0 = 0, y0 = 0, x1 = 0, y1 = 0;
+    handle.onmousedown = e => {
+        e.preventDefault();
+        x1 = e.clientX; y1 = e.clientY;
+        document.onmousemove = drag;
+        document.onmouseup = () => {
+            document.onmousemove = null;
+            document.onmouseup = null;
+            chrome.storage.local.set({ windowState: { top: el.offsetTop, left: el.offsetLeft, width: el.offsetWidth, height: el.offsetHeight } });
+        };
+    };
+    function drag(e) {
+        e.preventDefault();
+        x0 = x1 - e.clientX; y0 = y1 - e.clientY;
+        x1 = e.clientX; y1 = e.clientY;
+        el.style.top = (el.offsetTop - y0) + 'px';
+        el.style.left = (el.offsetLeft - x0) + 'px';
+    }
 }
 
 function makeResizable(el, handle) {
-  handle.onmousedown = () => {
-    window.addEventListener('mousemove', resize);
-    window.addEventListener('mouseup', () => window.removeEventListener('mousemove', resize), { once: true });
-  };
-  function resize(e) {
-    el.style.width  = (e.clientX - el.offsetLeft) + 'px';
-    el.style.height = (e.clientY - el.offsetTop)  + 'px';
-  }
+    handle.onmousedown = () => {
+        window.addEventListener('mousemove', resize);
+        window.addEventListener('mouseup', () => {
+            window.removeEventListener('mousemove', resize);
+            chrome.storage.local.set({ windowState: { top: el.offsetTop, left: el.offsetLeft, width: el.offsetWidth, height: el.offsetHeight } });
+        }, { once: true });
+    };
+    function resize(e) {
+        const newWidth = Math.max(UI_CONFIG.MIN_WIDTH, e.clientX - el.offsetLeft);
+        const newHeight = Math.max(UI_CONFIG.MIN_HEIGHT, e.clientY - el.offsetTop);
+        el.style.width = newWidth + 'px';
+        el.style.height = newHeight + 'px';
+    }
 }
