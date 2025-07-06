@@ -6,4 +6,5 @@ Futher improvements to Options
     c) Default System Prompt Button (removes user prompt and replaces with standarized version)
     4) use less vertical space
 Seperate System Prompts for Websites vs Youtube?
-
+Remove "AI Summary" on popup (background.js@374)
+Remember Popup Text Size and/or set a default size in "options"
