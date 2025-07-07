@@ -2,6 +2,15 @@
 // Handles URL content extraction and API communication for summarization
 console.log('[Background] Service worker loaded');
 
+// Handle expected AbortErrors from cancelled API requests
+self.addEventListener('unhandledrejection', event => {
+  if (event.reason && event.reason.name === 'AbortError') {
+    // This is expected when we cancel API requests - suppress the error
+    console.log('[Background] API request cancelled (expected)');
+    event.preventDefault();
+  }
+});
+
 // Maps unique request IDs to tab IDs for tracking multiple concurrent requests
 let tabIdMap = new Map();
 // Maps unique request IDs to AbortControllers for stopping API requests
@@ -45,7 +54,7 @@ async function handleIconClick(tab) {
 
   // Check if URL is processable
   if (tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://') || tab.url.startsWith('moz-extension://')) {
-    console.warn('[Background] Cannot process browser internal pages');
+    console.log('[Background] Cannot process browser internal pages');
     return;
   }
 
@@ -164,7 +173,7 @@ async function sendMessageSafely(tabId, message) {
             chrome.runtime.lastError.message.includes('Receiving end does not exist')) {
           reject(new Error(chrome.runtime.lastError.message));
         } else {
-          console.warn('[Background] Message warning:', chrome.runtime.lastError.message);
+          console.log('[Background] Message warning:', chrome.runtime.lastError.message);
           resolve(null);
         }
       } else {
@@ -229,7 +238,7 @@ async function makeApiCall(text, uniqueId) {
 
   const processedText = truncateText(text.trim());
   if (processedText !== text) {
-    console.warn('[API] Text was truncated from', text.length, 'to', processedText.length, 'characters');
+    console.log('[API] Text was truncated from', text.length, 'to', processedText.length, 'characters');
     const tab = tabIdMap.get(uniqueId);
     if (tab) {
       await sendMessageSafely(tab, {
@@ -556,7 +565,7 @@ function handleJsonLine(jsonLine, uniqueId) {
     const tab = tabIdMap.get(uniqueId);
     
     if (!tab) {
-      console.warn('[API] No tab found for uniqueId:', uniqueId);
+      console.log('[API] No tab found for uniqueId:', uniqueId, '(window may be closed)');
       return;
     }
     
@@ -602,6 +611,6 @@ function handleJsonLine(jsonLine, uniqueId) {
     }
     
   } catch (e) {
-    console.warn('[API] Failed to parse JSON line:', e.message, 'Line:', jsonLine.substring(0, 100));
+    console.log('[API] Failed to parse JSON line (stream may be cancelled):', e.message, 'Line:', jsonLine.substring(0, 100));
   }
 }

@@ -288,13 +288,13 @@ function changeFontSize(uniqueId, delta) {
   try {
     const win = floatingWindows.get(uniqueId);
     if (!win) {
-      console.warn(`[Content] Window ${uniqueId} not found for font size change`);
+      console.log(`[Content] Window ${uniqueId} already closed, skipping font size change`);
       return;
     }
     
     const content = win.querySelector(`#content-${uniqueId}`);
     if (!content) {
-      console.warn(`[Content] Content element not found for window ${uniqueId}`);
+      console.log(`[Content] Content element not found for window ${uniqueId} (window closed)`);
       return;
     }
     
@@ -322,7 +322,7 @@ function toggleMinimize(uniqueId) {
   try {
     const wrapper = floatingWindows.get(uniqueId);
     if (!wrapper) {
-      console.warn(`[Content] Window ${uniqueId} not found for minimize toggle`);
+      console.log(`[Content] Window ${uniqueId} already closed, skipping minimize toggle`);
       return;
     }
     const win = wrapper.querySelector(`#floating-window-${uniqueId}`);
@@ -331,7 +331,7 @@ function toggleMinimize(uniqueId) {
     const minimizeBtn = win.querySelector(`#minimize-btn-${uniqueId}`);
     
     if (!content || !handle || !win) {
-      console.warn(`[Content] Required elements not found for window ${uniqueId}`);
+      console.log(`[Content] Required elements not found for window ${uniqueId} (window closed)`);
       return;
     }
     
@@ -372,13 +372,14 @@ function handleMessage(content, uniqueId) {
   try {
     const win = floatingWindows.get(uniqueId);
     if (!win) {
-      console.warn(`[Content] Window ${uniqueId} not found for message handling`);
+      // This is expected when window is already closed - no need to warn
+      console.log(`[Content] Window ${uniqueId} already closed, skipping message`);
       return;
     }
     
     const contentElement = win.querySelector(`#content-${uniqueId}`);
     if (!contentElement) {
-      console.warn(`[Content] Content element not found for window ${uniqueId}`);
+      console.log(`[Content] Content element not found for window ${uniqueId} (window closed)`);
       return;
     }
 
@@ -558,7 +559,7 @@ function showLoading(uniqueId) {
   try {
     const win = floatingWindows.get(uniqueId);
     if (!win) {
-      console.warn(`[Content] Window ${uniqueId} not found for loading display`);
+      console.log(`[Content] Window ${uniqueId} already closed, skipping loading display`);
       return;
     }
     
@@ -578,7 +579,8 @@ function hideLoading(uniqueId) {
   try {
     const win = floatingWindows.get(uniqueId);
     if (!win) {
-      console.warn(`[Content] Window ${uniqueId} not found for loading hide`);
+      // This is expected when window is already closed - no need to warn
+      console.log(`[Content] Window ${uniqueId} already closed, skipping loading hide`);
       return;
     }
     
