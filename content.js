@@ -9,6 +9,7 @@ let textSizes = new Map();
 let windowPositions = new Map();
 let windowSizes = new Map();
 let contentBuffers = new Map();
+let userScrolledUp = new Map();
  
  // Configuration constants
  const UI_CONFIG = {
@@ -159,8 +160,19 @@ async function createFloatingWindow(uniqueId) {
     isMinimized.set(uniqueId, false);
     textSizes.set(uniqueId, initialFontSize);
     windowPositions.set(uniqueId, position);
+    userScrolledUp.set(uniqueId, false);
 
     const win = floatingWindow.querySelector(`#floating-window-${uniqueId}`);
+    const contentEl = win.querySelector(`#content-${uniqueId}`);
+
+    // Add scroll event listener to track user scrolling
+    if (contentEl) {
+      contentEl.addEventListener('scroll', () => {
+        // A threshold of 1px is used to account for potential floating point inaccuracies.
+        const isScrolledToBottom = contentEl.scrollHeight - contentEl.clientHeight <= contentEl.scrollTop + 1;
+        userScrolledUp.set(uniqueId, !isScrolledToBottom);
+      });
+    }
     
     // Add event listeners with error handling
     setupWindowEventListeners(uniqueId, win);
@@ -254,6 +266,7 @@ function cleanupWindowState(uniqueId) {
   windowPositions.delete(uniqueId);
   windowSizes.delete(uniqueId);
   contentBuffers.delete(uniqueId);
+  userScrolledUp.delete(uniqueId);
 }
 
 /**
@@ -365,7 +378,10 @@ function handleMessage(content, uniqueId) {
     contentElement.innerHTML = sanitizeContent(currentBuffer);
     
     // Auto-scroll to bottom
-    contentElement.scrollTop = contentElement.scrollHeight;
+    // Auto-scroll to bottom only if user hasn't scrolled up
+    if (!userScrolledUp.get(uniqueId)) {
+      contentElement.scrollTop = contentElement.scrollHeight;
+    }
     
     // Apply current font size
     const currentFontSize = textSizes.get(uniqueId) || UI_CONFIG.DEFAULT_FONT_SIZE;

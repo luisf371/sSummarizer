@@ -1,6 +1,9 @@
 # Changelog
 
-## v1.1 - Minor Option Enhancement
+## v1.3 - Minor
+  - Free scroll movement on popup during incoming stream - allows users to read while streaming.
+
+## v1.2 - Minor Option Enhancement
   - Modified System Prompt box to calculate based on chrome.storage.sync limitation of 8Kb of data.
 
 ## v1.1 - Major Refactor and UI/UX Overhaul
