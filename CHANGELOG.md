@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.5 - Functional YT extractor
+  - Fixed yt extraction by using same method as the Python Youtube Subtitle plugin.
+
 ## v1.4 - Minor
   - Improved Markdown to Html function (popup window) support.
 
