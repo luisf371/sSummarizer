@@ -16,7 +16,9 @@
   ],
   "host_permissions": [
     "https://www.youtube.com/*",
-    "https://www.youtube.com/api/timedtext*",
+    "https://www.youtube.com/api/*",
+    "https://www.youtube.com/youtubei/*",
+    "https://www.youtube.com/get_video_info*",
     "https://*/*",
     "http://*/*"
   ],
