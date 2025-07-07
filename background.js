@@ -340,6 +340,8 @@ async function makeApiCall(text, uniqueId) {
       stream: enableStreaming || false
     };
 
+    console.log('[API] Full request payload:', JSON.stringify(requestBody, null, 2));
+
     console.log('[API] Making request with streaming =', enableStreaming);
     const response = await fetch(apiUrl, {
       method: 'POST',
