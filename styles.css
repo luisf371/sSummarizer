@@ -1,4 +1,18 @@
-/* Modern CSS for AI Summarizer Options Page */
+/* Dark Theme for AI Summarizer Options Page */
+
+:root {
+  --background-primary: #1a1b26;
+  --background-secondary: #24283b;
+  --text-primary: #c0caf5;
+  --text-secondary: #a9b1d6;
+  --accent-color: #bb9af7;
+  --accent-color-secondary: #7aa2f7;
+  --border-color: #3b4261;
+  --success-color: #9ece6a;
+  --error-color: #f7768e;
+  --input-background: #2b3044;
+  --button-inactive-bg: #414868;
+}
 
 * {
   box-sizing: border-box;
@@ -8,111 +22,121 @@
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-  line-height: 1.6;
-  color: #333;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  min-height: 100vh;
+  line-height: 1.5;
+  color: var(--text-primary);
+  background: var(--background-primary);
   padding: 20px;
 }
 
 .container {
   max-width: 800px;
   margin: 0 auto;
-  background: white;
+  background: var(--background-secondary);
   border-radius: 12px;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--border-color);
   overflow: hidden;
+  position: relative;
 }
 
 header {
-  background: linear-gradient(135deg, #2c3e50, #3498db);
-  color: white;
-  padding: 30px;
+  background: var(--background-secondary);
+  color: var(--text-primary);
+  padding: 25px 40px 15px;
   text-align: center;
+  border-bottom: 1px solid var(--border-color);
 }
 
 header h1 {
-  font-size: 2.5rem;
+  font-size: 2.2rem;
   font-weight: 700;
-  margin-bottom: 10px;
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  margin-bottom: 5px;
 }
 
 .subtitle {
   font-size: 1.1rem;
-  opacity: 0.9;
-  font-weight: 300;
+  font-weight: 400;
+  color: var(--text-secondary);
 }
 
 main {
-  padding: 40px;
+  padding: 15px 40px 30px;
 }
 
 .settings-form {
-  margin-bottom: 40px;
+  margin-bottom: 20px;
 }
 
 .form-section {
-  margin-bottom: 40px;
-  padding-bottom: 30px;
-  border-bottom: 1px solid #e9ecef;
+  margin-bottom: 25px;
+  padding-bottom: 15px;
+  border-bottom: 1px solid var(--border-color);
 }
 
 .form-section:last-child {
   border-bottom: none;
-  margin-bottom: 30px;
+  margin-bottom: 10px;
+  padding-bottom: 10px;
 }
 
 .form-section h2 {
-  font-size: 1.5rem;
-  color: #2c3e50;
+  font-size: 1.4rem;
+  color: var(--text-primary);
   margin-bottom: 20px;
   font-weight: 600;
 }
 
 .form-group {
-  margin-bottom: 25px;
+  margin-bottom: 15px;
+}
+
+.label-group {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
 }
 
 label {
   display: block;
   font-weight: 600;
-  color: #2c3e50;
-  margin-bottom: 8px;
+  color: var(--text-secondary);
   font-size: 0.95rem;
 }
 
 label.required::after {
   content: " *";
-  color: #e74c3c;
+  color: var(--error-color);
   font-weight: bold;
 }
 
 input[type="text"],
 input[type="url"],
 input[type="password"],
+input[type="number"],
 textarea {
   width: 100%;
   padding: 12px 16px;
-  border: 2px solid #e9ecef;
+  border: 1px solid var(--border-color);
   border-radius: 8px;
   font-size: 1rem;
   font-family: inherit;
   transition: all 0.3s ease;
-  background-color: #f8f9fa;
+  background-color: var(--input-background);
+  color: var(--text-primary);
 }
 
 input:focus,
 textarea:focus {
   outline: none;
-  border-color: #3498db;
-  background-color: white;
-  box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
+  border-color: var(--accent-color);
+  background-color: var(--background-primary);
+  box-shadow: 0 0 0 3px rgba(187, 154, 247, 0.2);
 }
 
 textarea {
   resize: vertical;
-  min-height: 120px;
+  min-height: 100px;
   font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
   line-height: 1.5;
 }
@@ -124,46 +148,53 @@ textarea {
 }
 
 .password-input-wrapper input {
-  padding-right: 50px;
+  padding-right: 60px; /* Make space for the text button */
 }
 
 .toggle-password {
   position: absolute;
-  right: 12px;
-  background: none;
+  right: 1px;
+  height: calc(100% - 2px);
+  background: #3b4261;
   border: none;
+  border-top-right-radius: 7px;
+  border-bottom-right-radius: 7px;
   cursor: pointer;
-  font-size: 1.2rem;
-  padding: 4px;
-  border-radius: 4px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  padding: 0 12px;
+  color: var(--text-primary);
   transition: background-color 0.2s ease;
 }
 
 .toggle-password:hover {
-  background-color: rgba(0, 0, 0, 0.05);
+  background-color: #4a5270;
 }
 
 .help-text {
   display: block;
   margin-top: 6px;
-  color: #6c757d;
+  color: var(--text-secondary);
   font-size: 0.875rem;
   line-height: 1.4;
 }
 
 .form-actions {
+  position: fixed;
+  top: 20px;
+  right: 40px;
+  z-index: 1000;
   display: flex;
   gap: 15px;
-  align-items: center;
-  flex-wrap: wrap;
 }
 
 .save-button,
-.test-button {
-  padding: 12px 24px;
+.test-button,
+.text-button {
+  padding: 10px 20px;
   border: none;
   border-radius: 8px;
-  font-size: 1rem;
+  font-size: 0.95rem;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.3s ease;
@@ -174,14 +205,15 @@ textarea {
 }
 
 .save-button {
-  background: linear-gradient(135deg, #27ae60, #2ecc71);
-  color: white;
-  box-shadow: 0 4px 15px rgba(46, 204, 113, 0.3);
+  background: var(--background-primary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
 }
 
 .save-button:hover:not(:disabled) {
   transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(46, 204, 113, 0.4);
+  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
 }
 
 .save-button:disabled {
@@ -191,32 +223,46 @@ textarea {
 }
 
 .test-button {
-  background: linear-gradient(135deg, #3498db, #2980b9);
-  color: white;
-  box-shadow: 0 4px 15px rgba(52, 152, 219, 0.3);
+  background: var(--background-primary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
 }
 
 .test-button:hover {
   transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(52, 152, 219, 0.4);
+  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+}
+
+.text-button {
+  background: none;
+  color: var(--accent-color-secondary);
+  font-size: 0.9rem;
+  font-weight: 500;
+  padding: 4px 8px;
+}
+
+.text-button:hover {
+  text-decoration: underline;
 }
 
 .info-section {
-  background: linear-gradient(135deg, #f8f9fa, #e9ecef);
+  background: var(--background-primary);
   border-radius: 12px;
   padding: 30px;
-  margin-top: 30px;
+  margin-top: 20px;
+  border: 1px solid var(--border-color);
 }
 
 .info-section h3 {
-  color: #2c3e50;
+  color: var(--text-primary);
   margin-bottom: 20px;
   font-size: 1.3rem;
   font-weight: 600;
 }
 
 .info-section h4 {
-  color: #34495e;
+  color: var(--text-secondary);
   margin: 20px 0 10px 0;
   font-size: 1.1rem;
   font-weight: 600;
@@ -224,8 +270,8 @@ textarea {
 
 .info-section ol,
 .info-section ul {
-  margin-left: 20px;
-  color: #555;
+  padding-left: 20px;
+  color: var(--text-secondary);
 }
 
 .info-section li {
@@ -236,7 +282,7 @@ textarea {
 .supported-sites {
   margin-top: 25px;
   padding-top: 20px;
-  border-top: 1px solid #dee2e6;
+  border-top: 1px solid var(--border-color);
 }
 
 /* Toggle switch styling */
@@ -271,7 +317,7 @@ textarea {
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: #ccc;
+  background-color: #414868;
   transition: .4s;
   border-radius: 28px;
 }
@@ -289,37 +335,37 @@ textarea {
 }
 
 input:checked + .slider {
-  background-color: #27ae60;
+  background-color: var(--accent-color);
 }
 
 input:focus + .slider {
-  box-shadow: 0 0 1px #27ae60;
+  box-shadow: 0 0 1px var(--accent-color);
 }
 
 input:checked + .slider:before {
   transform: translateX(22px);
 }
 
-
 /* Character counter styling */
 #prompt-counter {
   font-weight: 600;
-  color: #3498db;
+  color: var(--accent-color-secondary);
 }
 
 /* Responsive design */
 @media (max-width: 768px) {
   body {
-    padding: 10px;
+    padding: 0;
   }
-  
   .container {
     margin: 0;
     border-radius: 0;
+    border: none;
   }
   
   header {
     padding: 20px;
+    padding-top: 70px; /* Make space for buttons */
   }
   
   header h1 {
@@ -329,16 +375,16 @@ input:checked + .slider:before {
   main {
     padding: 20px;
   }
-  
+
   .form-actions {
-    flex-direction: column;
-    align-items: stretch;
+    top: 15px;
+    right: 15px;
   }
-  
+
   .save-button,
   .test-button {
-    width: 100%;
-    justify-content: center;
+    padding: 8px 12px;
+    font-size: 0.9rem;
   }
 }
 
@@ -356,25 +402,37 @@ input:checked + .slider:before {
 
 #status-message {
   animation: slideIn 0.3s ease-out;
+  padding: 10px;
+  border-radius: 4px;
+  font-weight: 500;
+  border: 1px solid transparent;
 }
+
+/* Set field error/success colors for dark theme */
+#status-message[data-type="success"] {
+  background-color: rgba(158, 206, 106, 0.2);
+  border-color: var(--success-color);
+  color: var(--success-color);
+}
+
+#status-message[data-type="error"] {
+  background-color: rgba(247, 118, 142, 0.2);
+  border-color: var(--error-color);
+  color: var(--error-color);
+}
+
+#status-message[data-type="info"] {
+    background-color: rgba(122, 162, 247, 0.2);
+    border-color: var(--accent-color-secondary);
+    color: var(--accent-color-secondary);
+}
+
 
 /* Focus styles for accessibility */
 button:focus,
 input:focus,
-textarea:focus {
-  outline: 2px solid #3498db;
+textarea:focus,
+.slider:focus {
+  outline: 2px solid var(--accent-color-secondary);
   outline-offset: 2px;
-}
-
-/* Loading state for buttons */
-.save-button:disabled .button-text::after {
-  content: "...";
-  animation: dots 1.5s infinite;
-}
-
-@keyframes dots {
-  0%, 20% { content: ""; }
-  40% { content: "."; }
-  60% { content: ".."; }
-  80%, 100% { content: "..."; }
 }
