@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.6 - Added cancelation of stream
+  - Pressing X on popup will properly cancel streams *Only works in streaming mode and models that supports it*
+
 ## 1.5 - Functional YT extractor
   - Fixed yt extraction by using same method as the Python Youtube Subtitle plugin.
 
