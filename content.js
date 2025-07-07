@@ -10,7 +10,7 @@ let windowPositions = new Map();
 let windowSizes = new Map();
 let contentBuffers = new Map();
 let userScrolledUp = new Map();
- 
+
  // Configuration constants
  const UI_CONFIG = {
   DEFAULT_FONT_SIZE: 14,
@@ -410,7 +410,7 @@ function sanitizeContent(content) {
   let html = convertMarkdownToHtml(content);
   
   // Allow basic formatting tags but escape potentially dangerous content
-  const allowedTags = ['b', 'i', 'em', 'strong', 'br', 'p', 'div', 'span', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol', 'li', 'code', 'pre', 'blockquote'];
+  const allowedTags = ['b', 'i', 'em', 'strong', 'br', 'p', 'div', 'span', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol', 'li', 'code', 'pre', 'blockquote', 'hr'];
   const tagRegex = /<(\/?)([\w]+)([^>]*)>/gi;
   
   return html.replace(tagRegex, (match, slash, tagName, attributes) => {
@@ -419,60 +419,115 @@ function sanitizeContent(content) {
       return `<${slash}${tagName}>`;
     }
     // Escape disallowed tags
-    return match.replace(/</g, '<').replace(/>/g, '>');
+    return match.replace(/</g, '&lt;').replace(/>/g, '&gt;');
   });
 }
 
-/**
- * Convert basic markdown to HTML
- */
+function getIndent(line) {
+    const match = line.match(/^(\s*)/);
+    return match ? match[1].length : 0;
+}
+
 function convertMarkdownToHtml(markdown) {
-  let html = markdown;
-  
-  // Headers (must be done first)
-  html = html.replace(/^### (.*$)/gm, '<h3>$1</h3>');
-  html = html.replace(/^## (.*$)/gm, '<h2>$1</h2>');
-  html = html.replace(/^# (.*$)/gm, '<h1>$1</h1>');
-  
-  // Bold and italic
-  html = html.replace(/\*\*\*(.*?)\*\*\*/g, '<strong><em>$1</em></strong>');
-  html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-  html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
-  
-  // Code blocks (must be done before inline code)
-  html = html.replace(/```[\s\S]*?```/g, (match) => {
-    const code = match.slice(3, -3).trim();
-    return `<pre><code>${escapeHtml(code)}</code></pre>`;
-  });
-  
-  // Inline code
-  html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
-  
-  // Lists
-  html = html.replace(/^\* (.+)$/gm, '<li>$1</li>');
-  html = html.replace(/^\d+\. (.+)$/gm, '<li>$1</li>');
-  
-  // Wrap consecutive list items in ul/ol tags
-  html = html.replace(/(<li>.*<\/li>)/gs, (match) => {
-    // Check if it's a numbered list by looking at the original markdown
-    const isNumbered = markdown.includes('1. ') || markdown.includes('2. ');
-    const tag = isNumbered ? 'ol' : 'ul';
-    return `<${tag}>${match}</${tag}>`;
-  });
-  
-  // Blockquotes
-  html = html.replace(/^> (.+)$/gm, '<blockquote>$1</blockquote>');
-  
-  // Line breaks
-  html = html.replace(/\n\n/g, '</p><p>');
-  html = html.replace(/\n/g, ' '); // Replace remaining single newlines with a space
-  
-  // Wrap in paragraphs if not already wrapped
-  if (!html.includes('<p>') && !html.includes('<h') && !html.includes('<ul>') && !html.includes('<ol>')) {
-    html = `<p>${html}</p>`;
-  }
-  
-  return html;
+    const processInline = (text) => {
+        return text.trim()
+            .replace(/\*\*\*(.*?)\*\*\*/g, '<strong><em>$1</em></strong>')
+            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+            .replace(/\*(.*?)\*/g, '<em>$1</em>')
+            .replace(/`([^`]+)`/g, '<code>$1</code>');
+    };
+
+    const lines = markdown.trim().split('\n');
+    let html = '';
+    let i = 0;
+
+    while (i < lines.length) {
+        const line = lines[i];
+
+        // Headers
+        if (line.match(/^#{1,6}\s/)) {
+            const level = line.match(/^#+/)[0].length;
+            html += `<h${level}>${processInline(line.replace(/^#+\s*/, ''))}</h${level}>\n`;
+            i++;
+            continue;
+        }
+
+        // Horizontal Rule
+        if (line.match(/^-{3,}$/)) {
+            html += '<hr>\n';
+            i++;
+            continue;
+        }
+
+        // Code blocks
+        if (line.startsWith('```')) {
+            let codeBlockContent = '';
+            i++;
+            while (i < lines.length && !lines[i].startsWith('```')) {
+                codeBlockContent += lines[i] + '\n';
+                i++;
+            }
+            html += `<pre><code>${escapeHtml(codeBlockContent.trim())}</code></pre>\n`;
+            i++; // Skip closing ```
+            continue;
+        }
+        
+        // Lists
+        if (line.match(/^(\s*)([-*]|\d+\.)\s/)) {
+            let listHtml = '';
+            const listStack = [];
+            
+            while (i < lines.length && lines[i].match(/^(\s*)([-*]|\d+\.)\s|^\s+.*$/)) {
+                 const itemMatch = lines[i].match(/^(\s*)([-*]|\d+\.)\s(.*)/);
+                if (itemMatch) {
+                    const indent = itemMatch[1].length;
+                    const type = itemMatch[2].match(/\d/) ? 'ol' : 'ul';
+                    let content = itemMatch[3];
+
+                    // Look ahead for multi-line list items
+                    let nextIndex = i + 1;
+                    while (nextIndex < lines.length && lines[nextIndex].match(/^\s{2,}/) && !lines[nextIndex].match(/^(\s*)([-*]|\d+\.)\s/)) {
+                        content += ' ' + lines[nextIndex].trim();
+                        nextIndex++;
+                    }
+
+                    while (listStack.length > 0 && indent < listStack[listStack.length - 1].indent) {
+                        listHtml += `</${listStack.pop().type}>\n`;
+                    }
+                    if (listStack.length === 0 || indent > listStack[listStack.length - 1].indent || type !== listStack[listStack.length - 1].type) {
+                       if(listStack.length > 0 && listStack[listStack.length-1].type !== type) {
+                           listHtml += `</${listStack.pop().type}>\n`;
+                       }
+                       listHtml += `<${type}>\n`;
+                       listStack.push({ type, indent });
+                    }
+                    listHtml += `<li>${processInline(content)}</li>\n`;
+                    i = nextIndex;
+                } else {
+                    // This case handles empty lines between list items, which we'll ignore for now
+                    i++;
+                }
+            }
+            while (listStack.length > 0) {
+                 listHtml += `</${listStack.pop().type}>\n`;
+            }
+            html += listHtml;
+            continue;
+        }
+        
+        // Paragraphs
+        if (line.trim()) {
+            let paragraphContent = line;
+            while (i + 1 < lines.length && lines[i + 1].trim() && !lines[i + 1].match(/^-{3,}$/) && !lines[i+1].match(/^#{1,6}\s/) && !lines[i+1].match(/^(\s*)([-*]|\d+\.)\s/)) {
+                paragraphContent += '<br>' + lines[i + 1];
+                i++;
+            }
+            html += `<p>${processInline(paragraphContent)}</p>\n`;
+        }
+        i++;
+    }
+
+    return html.trim();
 }
 
 /**

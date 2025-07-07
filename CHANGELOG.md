@@ -1,5 +1,8 @@
 # Changelog
 
+## v1.4 - Minor
+  - Improved Markdown to Html function (popup window) support.
+
 ## v1.3 - Minor
   - Free scroll movement on popup during incoming stream - allows users to read while streaming.
 
