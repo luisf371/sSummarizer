@@ -245,6 +245,18 @@ function setupWindowEventListeners(uniqueId, win) {
  */
 function closeWindow(uniqueId) {
   try {
+    // Send stop request to background script to abort any ongoing API request
+    chrome.runtime.sendMessage({
+      action: 'stopApiRequest',
+      uniqueId: uniqueId
+    }, (response) => {
+      if (chrome.runtime.lastError) {
+        console.warn('[Content] Error sending stop request:', chrome.runtime.lastError.message);
+      } else {
+        console.log(`[Content] Stop request sent for ${uniqueId}`);
+      }
+    });
+    
     const win = floatingWindows.get(uniqueId);
     if (win && win.parentNode) {
       win.remove();

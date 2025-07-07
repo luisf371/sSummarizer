@@ -4,6 +4,10 @@ console.log('[Background] Service worker loaded');
 
 // Maps unique request IDs to tab IDs for tracking multiple concurrent requests
 let tabIdMap = new Map();
+// Maps unique request IDs to AbortControllers for stopping API requests
+let abortControllers = new Map();
+// Set of cancelled request IDs to prevent late execution
+let cancelledRequests = new Set();
 
 // Configuration constants
 const CONFIG = {
@@ -12,6 +16,15 @@ const CONFIG = {
   RETRY_ATTEMPTS: 3,
   YOUTUBE_TRANSCRIPT_TIMEOUT: 10000
 };
+
+// Add message listener for stopping API requests
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  console.log('[Background] Received message:', request);
+  if (request.action === 'stopApiRequest') {
+    stopApiRequest(request.uniqueId);
+    sendResponse({ success: true });
+  }
+});
 
 // Wrap click logic in its own async function so we can catch errors
 chrome.action.onClicked.addListener((tab) => {
@@ -194,6 +207,19 @@ function truncateText(text, maxLength = CONFIG.MAX_TEXT_LENGTH) {
 async function makeApiCall(text, uniqueId) {
   console.log('[API] makeApiCall text length=', text.length);
   
+  // Check if the request was explicitly cancelled
+  if (cancelledRequests.has(uniqueId)) {
+    console.log(`[API] Request ${uniqueId} was cancelled, skipping API call`);
+    return;
+  }
+  
+  // Check if the window/request was already closed/cancelled
+  const tabId = tabIdMap.get(uniqueId);
+  if (!tabId) {
+    console.log(`[API] Request ${uniqueId} was already closed/cancelled, skipping API call`);
+    return;
+  }
+  
   // Validate and truncate text if necessary
   if (!text || typeof text !== 'string') {
     console.error('[API] Invalid text input');
@@ -238,6 +264,9 @@ async function makeApiCall(text, uniqueId) {
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), CONFIG.REQUEST_TIMEOUT);
+  
+  // Store the abort controller for potential cancellation
+  abortControllers.set(uniqueId, { controller, timeoutId, reader: null });
 
   try {
     const requestBody = {
@@ -282,6 +311,7 @@ async function makeApiCall(text, uniqueId) {
     if (!response.ok) {
       const errorText = await response.text();
       console.error('[API] Error response:', errorText);
+      abortControllers.delete(uniqueId);
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
 
@@ -290,6 +320,7 @@ async function makeApiCall(text, uniqueId) {
     const tab = tabIdMap.get(uniqueId);
     if (!tab) {
       console.error('[API] No tab found for uniqueId:', uniqueId);
+      abortControllers.delete(uniqueId);
       return;
     }
     
@@ -299,6 +330,12 @@ async function makeApiCall(text, uniqueId) {
       const decoder = new TextDecoder('utf-8');
       let buffer = '';
 
+      // Store the reader so we can cancel it if needed
+      const abortInfo = abortControllers.get(uniqueId);
+      if (abortInfo) {
+        abortInfo.reader = reader;
+      }
+
       // Send the initial part of the summary message
       await sendMessageSafely(tab, {
         action: 'appendToFloatingWindow',
@@ -306,22 +343,48 @@ async function makeApiCall(text, uniqueId) {
         uniqueId
       });
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) {
-          console.log('[API] Stream finished');
-          if (buffer.length > 0) {
-            processBuffer(buffer, uniqueId);
+      try {
+        while (true) {
+          // Check if request was aborted before reading next chunk
+          const currentAbortInfo = abortControllers.get(uniqueId);
+          if (!currentAbortInfo) {
+            console.log('[API] Request was aborted, stopping stream processing');
+            try {
+              reader.cancel();
+            } catch (e) {
+              console.log('[API] Reader already cancelled or closed');
+            }
+            break;
           }
-          await sendMessageSafely(tab, { action: 'hideLoading', uniqueId });
-          tabIdMap.delete(uniqueId);
-          break;
+
+          const { done, value } = await reader.read();
+          if (done) {
+            console.log('[API] Stream finished');
+            if (buffer.length > 0) {
+              processBuffer(buffer, uniqueId);
+            }
+            await sendMessageSafely(tab, { action: 'hideLoading', uniqueId });
+            abortControllers.delete(uniqueId);
+            cancelledRequests.delete(uniqueId);
+            tabIdMap.delete(uniqueId);
+            break;
+          }
+          buffer += decoder.decode(value, { stream: true });
+          buffer = processBuffer(buffer, uniqueId);
         }
-        buffer += decoder.decode(value, { stream: true });
-        buffer = processBuffer(buffer, uniqueId);
+      } catch (error) {
+        if (error.name === 'AbortError') {
+          console.log('[API] Stream reading aborted by user');
+        } else {
+          console.error('[API] Stream reading error:', error);
+        }
+        abortControllers.delete(uniqueId);
+        cancelledRequests.delete(uniqueId);
+        tabIdMap.delete(uniqueId);
       }
     } else {
-      // Handle non-streaming response
+      // Handle non-streaming response - can clean up immediately
+      abortControllers.delete(uniqueId);
       const responseData = await response.json();
       console.log('[API] Full response:', responseData);
 
@@ -336,6 +399,7 @@ async function makeApiCall(text, uniqueId) {
         });
         
         await sendMessageSafely(tab, { action: 'hideLoading', uniqueId });
+        cancelledRequests.delete(uniqueId);
         tabIdMap.delete(uniqueId);
       } else {
         console.error('[API] No content in response:', responseData);
@@ -344,6 +408,7 @@ async function makeApiCall(text, uniqueId) {
     }
   } catch (err) {
     clearTimeout(timeoutId);
+    abortControllers.delete(uniqueId);
     console.error('[API] call error:', err);
     
     let errorMessage = 'API request failed';
@@ -360,9 +425,66 @@ async function makeApiCall(text, uniqueId) {
 }
 
 /**
+ * Stop an ongoing API request
+ */
+function stopApiRequest(uniqueId) {
+  console.log(`[API] Stopping API request for uniqueId: ${uniqueId}`);
+  
+  // Mark request as cancelled to prevent future execution
+  cancelledRequests.add(uniqueId);
+  
+  const abortInfo = abortControllers.get(uniqueId);
+  if (abortInfo) {
+    const { controller, timeoutId, reader } = abortInfo;
+    
+    // Abort the fetch request
+    controller.abort();
+    clearTimeout(timeoutId);
+    
+    // Cancel the stream reader if it exists
+    if (reader) {
+      try {
+        reader.cancel();
+        console.log(`[API] Stream reader cancelled for ${uniqueId}`);
+      } catch (e) {
+        console.log(`[API] Reader already cancelled or closed for ${uniqueId}`);
+      }
+    }
+    
+    abortControllers.delete(uniqueId);
+    console.log(`[API] Successfully aborted request ${uniqueId}`);
+    
+    // Send notification to UI that request was stopped
+    const tab = tabIdMap.get(uniqueId);
+    if (tab) {
+      sendMessageSafely(tab, { action: 'hideLoading', uniqueId });
+      sendMessageSafely(tab, {
+        action: 'appendToFloatingWindow',
+        content: '[Info] Request stopped by user.',
+        uniqueId
+      });
+    }
+    
+    tabIdMap.delete(uniqueId);
+  } else {
+    console.log(`[API] Request ${uniqueId} marked as cancelled (may not have started yet)`);
+    
+    // Still try to clean up tab mapping
+    tabIdMap.delete(uniqueId);
+  }
+}
+
+/**
  * Handle API errors consistently
  */
 async function handleApiError(uniqueId, message) {
+  // Clean up abort controller if it exists
+  const abortInfo = abortControllers.get(uniqueId);
+  if (abortInfo) {
+    clearTimeout(abortInfo.timeoutId);
+    abortControllers.delete(uniqueId);
+  }
+  
   const tab = tabIdMap.get(uniqueId);
   if (tab) {
     try {
@@ -376,15 +498,29 @@ async function handleApiError(uniqueId, message) {
       console.error('[API] Failed to send error message to tab:', e);
     }
   }
+  cancelledRequests.delete(uniqueId);
   tabIdMap.delete(uniqueId);
 }
 
 function processBuffer(buffer, uniqueId) {
+    // Check if request was aborted before processing buffer
+    const abortInfo = abortControllers.get(uniqueId);
+    if (!abortInfo) {
+        console.log('[API] Request was aborted, skipping buffer processing for:', uniqueId);
+        return '';
+    }
+
     // Process multiple data chunks in a single buffer
     const lines = buffer.split('\n');
     buffer = lines.pop(); // Keep the last, possibly incomplete, line
 
     for (const line of lines) {
+        // Check again in case abort happened during processing
+        if (!abortControllers.get(uniqueId)) {
+            console.log('[API] Request was aborted during buffer processing for:', uniqueId);
+            return '';
+        }
+
         if (line.trim().startsWith('data: ')) {
             const jsonLine = line.trim().substring(5).trim();
             if (jsonLine === '[DONE]') {
@@ -392,6 +528,8 @@ function processBuffer(buffer, uniqueId) {
                 const tab = tabIdMap.get(uniqueId);
                 if (tab) {
                     chrome.tabs.sendMessage(tab, { action: 'hideLoading', uniqueId });
+                    abortControllers.delete(uniqueId);
+                    cancelledRequests.delete(uniqueId);
                     tabIdMap.delete(uniqueId);
                 }
                 continue;
@@ -405,6 +543,14 @@ function processBuffer(buffer, uniqueId) {
 function handleJsonLine(jsonLine, uniqueId) {
   try {
     if (!jsonLine) return;
+    
+    // Check if request was aborted before processing
+    const abortInfo = abortControllers.get(uniqueId);
+    if (!abortInfo) {
+      console.log('[API] Request was aborted, skipping JSON line processing for:', uniqueId);
+      return;
+    }
+    
     console.log('[API] Processing JSON line:', jsonLine.substring(0, 200));
     const data = JSON.parse(jsonLine);
     const tab = tabIdMap.get(uniqueId);
@@ -432,6 +578,8 @@ function handleJsonLine(jsonLine, uniqueId) {
     if (data.choices?.[0]?.finish_reason === 'stop') {
       console.log('[API] Stream finished');
       chrome.tabs.sendMessage(tab, { action: 'hideLoading', uniqueId });
+      abortControllers.delete(uniqueId);
+      cancelledRequests.delete(uniqueId);
       tabIdMap.delete(uniqueId);
     }
     
@@ -448,6 +596,8 @@ function handleJsonLine(jsonLine, uniqueId) {
         }
       });
       chrome.tabs.sendMessage(tab, { action: 'hideLoading', uniqueId });
+      abortControllers.delete(uniqueId);
+      cancelledRequests.delete(uniqueId);
       tabIdMap.delete(uniqueId);
     }
     
