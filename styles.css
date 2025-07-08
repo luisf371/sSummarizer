@@ -1,17 +1,17 @@
 /* Dark Theme for AI Summarizer Options Page */
 
 :root {
-  --background-primary: #1a1b26;
-  --background-secondary: #24283b;
-  --text-primary: #c0caf5;
-  --text-secondary: #a9b1d6;
-  --accent-color: #bb9af7;
-  --accent-color-secondary: #7aa2f7;
-  --border-color: #3b4261;
-  --success-color: #9ece6a;
-  --error-color: #f7768e;
-  --input-background: #2b3044;
-  --button-inactive-bg: #414868;
+  --background-primary: #2E3440;
+  --background-secondary: #3B4252;
+  --text-primary: #ECEFF4;
+  --text-secondary: #D8DEE9;
+  --accent-color: #88C0D0;
+  --accent-color-secondary: #81A1C1;
+  --border-color: #4C566A;
+  --success-color: #A3BE8C;
+  --error-color: #BF616A;
+  --input-background: #3B4252;
+  --button-inactive-bg: #4C566A;
 }
 
 * {
@@ -131,7 +131,7 @@ textarea:focus {
   outline: none;
   border-color: var(--accent-color);
   background-color: var(--background-primary);
-  box-shadow: 0 0 0 3px rgba(187, 154, 247, 0.2);
+  box-shadow: 0 0 0 3px rgba(136, 192, 208, 0.2);
 }
 
 textarea {
@@ -155,7 +155,7 @@ textarea {
   position: absolute;
   right: 1px;
   height: calc(100% - 2px);
-  background: #3b4261;
+  background: #4C566A;
   border: none;
   border-top-right-radius: 7px;
   border-bottom-right-radius: 7px;
@@ -168,7 +168,7 @@ textarea {
 }
 
 .toggle-password:hover {
-  background-color: #4a5270;
+  background-color: #5E81AC;
 }
 
 .help-text {
@@ -317,7 +317,7 @@ textarea {
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: #414868;
+  background-color: var(--button-inactive-bg);
   transition: .4s;
   border-radius: 28px;
 }
@@ -410,19 +410,19 @@ input:checked + .slider:before {
 
 /* Set field error/success colors for dark theme */
 #status-message[data-type="success"] {
-  background-color: rgba(158, 206, 106, 0.2);
+  background-color: rgba(163, 190, 140, 0.2);
   border-color: var(--success-color);
   color: var(--success-color);
 }
 
 #status-message[data-type="error"] {
-  background-color: rgba(247, 118, 142, 0.2);
+  background-color: rgba(191, 97, 106, 0.2);
   border-color: var(--error-color);
   color: var(--error-color);
 }
 
 #status-message[data-type="info"] {
-    background-color: rgba(122, 162, 247, 0.2);
+    background-color: rgba(129, 161, 193, 0.2);
     border-color: var(--accent-color-secondary);
     color: var(--accent-color-secondary);
 }

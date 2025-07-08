@@ -20,7 +20,7 @@ let cancelledRequests = new Set();
 
 // Configuration constants
 const CONFIG = {
-  MAX_TEXT_LENGTH: 50000, // Maximum text length to send to API
+  MAX_TEXT_LENGTH: 100000, // Maximum text length to send to API
   REQUEST_TIMEOUT: 30000, // 30 seconds timeout for API requests
   RETRY_ATTEMPTS: 3,
   YOUTUBE_TRANSCRIPT_TIMEOUT: 10000

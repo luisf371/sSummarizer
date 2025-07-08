@@ -70,6 +70,7 @@ document.addEventListener('DOMContentLoaded', function() {
     setupByteCounter();
     setupTestConnection();
     setupDefaultPromptButton();
+    setupImmediateValidationReset();
   }
  
   function validateApiUrl(url) {
@@ -214,6 +215,16 @@ document.addEventListener('DOMContentLoaded', function() {
       systemPromptInput.dispatchEvent(new Event('input', { bubbles: true }));
     });
   }
+  function setupImmediateValidationReset() {
+    const fieldsToValidate = [apiKeyInput, apiUrlInput, modelInput, systemPromptInput];
+    
+    fieldsToValidate.forEach(field => {
+      // When the user starts typing, immediately remove any old error/success styles.
+      field.addEventListener('input', () => {
+        resetFieldState(field);
+      });
+    });
+  }
 
   function setupTestConnection() {
     const testButton = document.getElementById('test-connection');
@@ -245,8 +256,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const response = await fetch(apiUrl, {
           method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
           body: JSON.stringify({ model, max_tokens: 20, stream: false, messages: [
-            { role: 'system', content: 'You are a helpful assistant.' },
-            { role: 'user', content: 'Say "Connection test successful" if you can read this.' }]
+            { role: 'user', content: 'Reply with 1' }]
           }),
           signal: controller.signal
         });
