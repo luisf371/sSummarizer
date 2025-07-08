@@ -1,8 +1,9 @@
 # Changelog
 
 ## 1.8 - Work in Progress
-- Increased MAX_TEXT_LENGTH from 50,000 to 100,000 (most models can support that and more)
-
+- **Interface**
+  - Stream is default to On
+  
 ## 1.7 - Option page optimization
 - **Interface**
   - better display of expected data (examples) 
@@ -14,6 +15,7 @@
 - **Backend**
   - Reduced token usage of Test Function (no system prompt, reduced user prompt)
   - Removed default model append (all dependant on valid user input)
+  - Increased MAX_TEXT_LENGTH from 50,000 to 100,000 (most models can support that and more)
 
 ## 1.6 - Added cancelation of stream
   - Pressing X on popup will properly cancel streams *Only works in streaming mode and models that supports it*

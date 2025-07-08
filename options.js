@@ -53,7 +53,7 @@ document.addEventListener('DOMContentLoaded', function() {
         apiUrlInput.value = result.apiUrl || '';
         modelInput.value = result.model || '';
         systemPromptInput.value = result.systemPrompt || '';
-        enableStreamingInput.checked = result.enableStreaming || false;
+        enableStreamingInput.checked = result.enableStreaming ?? true;
         defaultFontSizeInput.value = result.defaultFontSize || 14;
         
         systemPromptInput.dispatchEvent(new Event('input', { bubbles: true }));

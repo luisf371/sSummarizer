@@ -11,3 +11,10 @@ Futher improvements to Options
 Seperate System Prompts for Websites vs Youtube?
 ~~Remove "AI Summary" on popup (background.js@374)~~
 ~~Remember Popup Text Size and/or set a default size in "options"~~
+
+
+Options Page v2
+- Dropdown selection for known API endpoints
+- Re-add /chat/completions in the backend code?
+- Modify System Prompt default text
+- ~~Ensure Stream mode is Enabled by default~~
