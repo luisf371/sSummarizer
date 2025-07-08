@@ -184,7 +184,7 @@ async function getTranscriptViaInternalAPI(videoId) {
     console.log('[YT Extractor] Fetched caption XML, length:', xmlText.length);
     
     // Step 7: Parse XML and extract text
-    return parseYouTubeCaptionXML(xmlText);
+    return await parseYouTubeCaptionXML(xmlText);
     
   } catch (error) {
     console.error('[YT Extractor] Error in getTranscriptViaInternalAPI:', error);
@@ -195,7 +195,7 @@ async function getTranscriptViaInternalAPI(videoId) {
 /**
  * Parse YouTube caption XML (mimicking Python ElementTree parsing)
  */
-function parseYouTubeCaptionXML(xmlText) {
+async function parseYouTubeCaptionXML(xmlText) {
   try {
     console.log('[YT Extractor] Parsing caption XML');
     
@@ -256,10 +256,21 @@ function parseYouTubeCaptionXML(xmlText) {
       return null;
     }
     
+    // Get timestamp setting
+    const { includeTimestamps } = await new Promise(resolve => 
+        chrome.storage.sync.get({ includeTimestamps: false }, resolve)
+    );
+
     // Sort by start time and join text
     snippets.sort((a, b) => a.start - b.start);
-    const fullTranscript = snippets.map(s => s.text).join(' ');
-    
+
+    let fullTranscript;
+    if (includeTimestamps) {
+        fullTranscript = snippets.map(s => `[${s.start}] ${s.text}`).join(' ');
+    } else {
+        fullTranscript = snippets.map(s => s.text).join(' ');
+    }
+
     console.log('[YT Extractor] Full transcript length:', fullTranscript.length);
     return fullTranscript;
     
@@ -309,7 +320,7 @@ async function extractFromPlayerResponse() {
     }
     
     const xml = await response.text();
-    return parseYouTubeCaptionXML(xml);
+    return await parseYouTubeCaptionXML(xml);
     
   } catch (error) {
     console.error('[YT Extractor] Error in extractFromPlayerResponse:', error);

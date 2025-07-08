@@ -6,6 +6,7 @@ document.addEventListener('DOMContentLoaded', function() {
   const modelInput = document.getElementById('model');
   const systemPromptInput = document.getElementById('system-prompt');
   const enableStreamingInput = document.getElementById('enable-streaming');
+  const includeTimestampsInput = document.getElementById('include-timestamps');
   const defaultFontSizeInput = document.getElementById('default-font-size');
   const saveButton = document.querySelector('button[type="submit"]');
   const defaultPromptBtn = document.getElementById('default-prompt-btn');
@@ -37,13 +38,14 @@ document.addEventListener('DOMContentLoaded', function() {
       model: modelInput.value.trim(),
       systemPrompt: systemPromptInput.value.trim(),
       enableStreaming: enableStreamingInput.checked,
+      includeTimestamps: includeTimestampsInput.checked,
       defaultFontSize: parseInt(defaultFontSizeInput.value, 10) || 14
     };
   }
 
   function loadSavedOptions() {
     try {
-      chrome.storage.sync.get(['apiKey', 'apiUrl', 'model', 'systemPrompt', 'enableStreaming', 'defaultFontSize'], function(result) {
+      chrome.storage.sync.get(['apiKey', 'apiUrl', 'model', 'systemPrompt', 'enableStreaming', 'includeTimestamps', 'defaultFontSize'], function(result) {
         if (chrome.runtime.lastError) {
           showStatus('Error loading saved settings: ' + chrome.runtime.lastError.message, 'error');
           return;
@@ -54,6 +56,7 @@ document.addEventListener('DOMContentLoaded', function() {
         modelInput.value = result.model || '';
         systemPromptInput.value = result.systemPrompt || '';
         enableStreamingInput.checked = result.enableStreaming ?? true;
+        includeTimestampsInput.checked = result.includeTimestamps ?? false;
         defaultFontSizeInput.value = result.defaultFontSize || 14;
         
         systemPromptInput.dispatchEvent(new Event('input', { bubbles: true }));

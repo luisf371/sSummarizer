@@ -1,6 +1,9 @@
 # Changelog
 
-## 1.8 - Work in Progress
+## 1.9 - Timestamps
+ -  Timestamp feature for better control and/or information from subtitles
+
+## 1.8 - Minor
 - **Interface**
   - Stream is default to On
   
