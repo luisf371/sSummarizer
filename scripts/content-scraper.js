@@ -281,12 +281,19 @@ async function parseYouTubeCaptionXML(xmlText) {
     // Sort by start time and join text
     snippets.sort((a, b) => a.start - b.start);
 
-    let fullTranscript;
+            let fullTranscript;
     if (includeTimestamps) {
         fullTranscript = snippets.map(s => `${formatTimestamp(s.start)} ${s.text}`).join(' ');
     } else {
         fullTranscript = snippets.map(s => s.text).join(' ');
     }
+
+    // Append timestamp info
+    const subtitleInfo = `
+
+- - - - - - - - - - - - - -
+Input contains timestamps: ${includeTimestamps}`;
+    fullTranscript += subtitleInfo;
 
     console.log('[YT Extractor] Full transcript length:', fullTranscript.length);
     return fullTranscript;
