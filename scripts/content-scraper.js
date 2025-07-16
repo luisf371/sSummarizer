@@ -191,6 +191,23 @@ async function getTranscriptViaInternalAPI(videoId) {
     return null;
   }
 }
+/**
+ * Formats seconds into [HH:MM:SS] format.
+ * @param {number} totalSeconds - The total seconds to format.
+ * @returns {string} The formatted timestamp string.
+ */
+function formatTimestamp(totalSeconds) {
+    const floorSeconds = Math.floor(totalSeconds);
+    const hours = Math.floor(floorSeconds / 3600);
+    const minutes = Math.floor((floorSeconds % 3600) / 60);
+    const seconds = floorSeconds % 60;
+
+    // Pad with leading zeros if necessary
+    const pad = (num) => String(num).padStart(2, '0');
+
+    return `[${pad(hours)}:${pad(minutes)}:${pad(seconds)}]`;
+}
+
 
 /**
  * Parse YouTube caption XML (mimicking Python ElementTree parsing)
@@ -266,7 +283,7 @@ async function parseYouTubeCaptionXML(xmlText) {
 
     let fullTranscript;
     if (includeTimestamps) {
-        fullTranscript = snippets.map(s => `[${s.start}] ${s.text}`).join(' ');
+        fullTranscript = snippets.map(s => `${formatTimestamp(s.start)} ${s.text}`).join(' ');
     } else {
         fullTranscript = snippets.map(s => s.text).join(' ');
     }
