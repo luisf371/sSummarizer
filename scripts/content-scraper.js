@@ -6,58 +6,38 @@
  * Based on the Python youtube-transcript-api implementation
  */
 async function extractYouTubeCaptions() {
-  console.log('[YT Extractor] Starting YouTube transcript extraction using internal API');
-  
-  try {
-    // Extract video ID from current URL
-    const videoId = extractVideoIdFromUrl(window.location.href);
-    if (!videoId) {
-      console.error('[YT Extractor] Could not extract video ID from URL:', window.location.href);
-      return await fallbackToTitleDescription();
+    console.log('[YT Extractor] Starting YouTube transcript extraction');
+
+    try {
+        // Method 1: Use YouTube Internal API
+        console.log('[YT Extractor] Attempting Method: YouTube Internal API');
+        const videoId = extractVideoIdFromUrl(window.location.href);
+        if (videoId) {
+            const transcriptData = await getTranscriptViaInternalAPI(videoId);
+            if (transcriptData && transcriptData.length > 100) {
+                console.log('[YT Extractor] Success! Extracted transcript via internal API, length:', transcriptData.length);
+                return transcriptData;
+            }
+        } else {
+            console.error('[YT Extractor] Could not extract video ID from URL.');
+        }
+
+        // Method 2: Try to access transcript panel
+        console.log('[YT Extractor] Attempting Method: Transcript panel extraction');
+        const transcriptPanelData = await extractFromTranscriptPanel();
+        if (transcriptPanelData && transcriptPanelData.length > 100) {
+            console.log('[YT Extractor] Success! Extracted from transcript panel, length:', transcriptPanelData.length);
+            return transcriptPanelData;
+        }
+
+        // Method 3: Fallback to title and description
+        console.log('[YT Extractor] All transcript methods failed, falling back to title and description');
+        return await fallbackToTitleDescription();
+
+    } catch (error) {
+        console.error('[YT Extractor] Error in extractYouTubeCaptions:', error);
+        return await fallbackToTitleDescription();
     }
-    
-    console.log('[YT Extractor] Extracted video ID:', videoId);
-    
-    // Method 1: Use YouTube Internal API (mirroring Python implementation)
-    console.log('[YT Extractor] Attempting Method 1: YouTube Internal API');
-    const transcriptData = await getTranscriptViaInternalAPI(videoId);
-    if (transcriptData && transcriptData.length > 100) {
-      console.log('[YT Extractor] Method 1: Success! Extracted transcript via internal API, length:', transcriptData.length);
-      return transcriptData;
-    }
-    
-    // Method 2: Try to extract from current page's ytInitialPlayerResponse
-    console.log('[YT Extractor] Attempting Method 2: ytInitialPlayerResponse extraction');
-    const playerResponseData = await extractFromPlayerResponse();
-    if (playerResponseData && playerResponseData.length > 100) {
-      console.log('[YT Extractor] Method 2: Success! Extracted from player response, length:', playerResponseData.length);
-      return playerResponseData;
-    }
-    
-    // Method 3: Try to access transcript panel
-    console.log('[YT Extractor] Attempting Method 3: Transcript panel extraction');
-    const transcriptPanelData = await extractFromTranscriptPanel();
-    if (transcriptPanelData && transcriptPanelData.length > 100) {
-      console.log('[YT Extractor] Method 3: Success! Extracted from transcript panel, length:', transcriptPanelData.length);
-      return transcriptPanelData;
-    }
-    
-    // Method 4: Monitor live captions
-    console.log('[YT Extractor] Attempting Method 4: Live caption monitoring');
-    const liveCaptionData = await monitorLiveCaptions();
-    if (liveCaptionData && liveCaptionData.length > 100) {
-      console.log('[YT Extractor] Method 4: Success! Monitored live captions, length:', liveCaptionData.length);
-      return liveCaptionData;
-    }
-    
-    // Method 5: Fallback to title and description
-    console.log('[YT Extractor] All transcript methods failed, falling back to title and description');
-    return await fallbackToTitleDescription();
-    
-  } catch (error) {
-    console.error('[YT Extractor] Error in extractYouTubeCaptions:', error);
-    return await fallbackToTitleDescription();
-  }
 }
 
 /**
@@ -65,10 +45,16 @@ async function extractYouTubeCaptions() {
  */
 function extractVideoIdFromUrl(url) {
   const patterns = [
-    /[?&]v=([^&]+)/,
-    /\/embed\/([^?&]+)/,
-    /\/watch\/([^?&]+)/,
-    /youtu\.be\/([^?&]+)/
+    /// orig working
+    // /[?&]v=([^&]+)/,
+    // /\/embed\/([^?&]+)/,
+    // /\/watch\/([^?&]+)/,
+    // /youtu\.be\/([^?&]+)/
+    // gpt improved
+    /[?&]v=([a-zA-Z0-9_-]{11})/,
+    /\/embed\/([a-zA-Z0-9_-]{11})/,
+    /\/watch\/([a-zA-Z0-9_-]{11})/,
+    /youtu\.be\/([a-zA-Z0-9_-]{11})/
   ];
   
   for (const pattern of patterns) {
@@ -305,54 +291,6 @@ Input contains timestamps: ${includeTimestamps}`;
 }
 
 /**
- * Extract from ytInitialPlayerResponse (fallback method)
- */
-async function extractFromPlayerResponse() {
-  try {
-    await waitForPlayerResponse();
-    
-    if (!window.ytInitialPlayerResponse) {
-      console.log('[YT Extractor] ytInitialPlayerResponse not available');
-      return null;
-    }
-    
-    const captions = window.ytInitialPlayerResponse.captions;
-    if (!captions?.playerCaptionsTracklistRenderer?.captionTracks) {
-      console.log('[YT Extractor] No caption tracks in player response');
-      return null;
-    }
-    
-    const tracks = captions.playerCaptionsTracklistRenderer.captionTracks;
-    console.log('[YT Extractor] Found tracks in player response:', tracks.length);
-    
-    // Select best track
-    let track = tracks.find(t => t.languageCode === 'en' && t.kind === 'asr');
-    if (!track) track = tracks.find(t => t.languageCode === 'en');
-    if (!track && tracks.length > 0) track = tracks[0];
-    
-    if (!track?.baseUrl) {
-      console.log('[YT Extractor] No suitable track in player response');
-      return null;
-    }
-    
-    console.log('[YT Extractor] Fetching captions from player response URL');
-    
-    const response = await fetch(track.baseUrl);
-    if (!response.ok) {
-      console.log('[YT Extractor] Failed to fetch from player response URL');
-      return null;
-    }
-    
-    const xml = await response.text();
-    return await parseYouTubeCaptionXML(xml);
-    
-  } catch (error) {
-    console.error('[YT Extractor] Error in extractFromPlayerResponse:', error);
-    return null;
-  }
-}
-
-/**
  * Extract from transcript panel (if available)
  */
 async function extractFromTranscriptPanel() {
@@ -393,53 +331,6 @@ async function extractFromTranscriptPanel() {
 }
 
 /**
- * Monitor live captions for a few seconds
- */
-async function monitorLiveCaptions() {
-  try {
-    const captionContainer = document.querySelector('.ytp-caption-window-container');
-    if (!captionContainer) {
-      console.log('[YT Extractor] No caption container found');
-      return null;
-    }
-    
-    // Enable captions if not already enabled
-    const captionButton = document.querySelector('.ytp-subtitles-button');
-    if (captionButton && captionButton.getAttribute('aria-pressed') !== 'true') {
-      captionButton.click();
-      await new Promise(resolve => setTimeout(resolve, 1000));
-    }
-    
-    // Collect captions over time
-    let collectedCaptions = '';
-    const startTime = Date.now();
-    
-    while (Date.now() - startTime < 8000) { // Monitor for 8 seconds
-      const captionElements = captionContainer.querySelectorAll('.ytp-caption-segment, .caption-visual-line');
-      const currentText = Array.from(captionElements).map(el => el.textContent?.trim()).filter(Boolean).join(' ');
-      
-      if (currentText && !collectedCaptions.includes(currentText)) {
-        collectedCaptions += ' ' + currentText;
-      }
-      
-      await new Promise(resolve => setTimeout(resolve, 500));
-    }
-    
-    const cleanedCaptions = collectedCaptions.trim();
-    if (cleanedCaptions.length > 50) {
-      console.log('[YT Extractor] Collected live captions, length:', cleanedCaptions.length);
-      return cleanedCaptions;
-    }
-    
-    return null;
-    
-  } catch (error) {
-    console.error('[YT Extractor] Error in monitorLiveCaptions:', error);
-    return null;
-  }
-}
-
-/**
  * Fallback to title and description
  */
 async function fallbackToTitleDescription() {
@@ -458,14 +349,6 @@ async function fallbackToTitleDescription() {
   } catch (error) {
     console.error('[YT Extractor] Error in fallbackToTitleDescription:', error);
     return null;
-  }
-}
-
-// Helper function to wait for player response
-async function waitForPlayerResponse() {
-  for (let i = 0; i < 50; i++) { // Wait up to 5 seconds
-    if (window.ytInitialPlayerResponse) break;
-    await new Promise(resolve => setTimeout(resolve, 100));
   }
 }
 

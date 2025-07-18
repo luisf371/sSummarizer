@@ -64,9 +64,13 @@ async function createFloatingWindow(uniqueId) {
     const initialFontSize = defaultFontSize || UI_CONFIG.DEFAULT_FONT_SIZE;
 
     const savedState = await chrome.storage.local.get(['windowState']);
-    const state = savedState.windowState || {};
-    const position = { top: state.top || 20, left: state.left || null };
-    const size = { width: state.width || UI_CONFIG.DEFAULT_WIDTH, height: state.height || UI_CONFIG.DEFAULT_HEIGHT };
+    let state = savedState.windowState || {};
+
+    // Validate and correct window position
+    state = validateWindowState(state);
+
+    const position = { top: state.top, left: state.left };
+    const size = { width: state.width, height: state.height };
 
     // If right is not saved, calculate it based on width
     if (position.left === null) {
@@ -188,6 +192,45 @@ async function createFloatingWindow(uniqueId) {
     // Clean up on error
     cleanupWindowState(uniqueId);
   }
+}
+
+/**
+ * Validates the window state to ensure it is within the viewport.
+ * @param {object} state - The window state object with top, left, width, height.
+ * @returns {object} A validated state object.
+ */
+function validateWindowState(state) {
+  const defaults = {
+    top: 20,
+    left: null,
+    right: 20,
+    width: UI_CONFIG.DEFAULT_WIDTH,
+    height: UI_CONFIG.DEFAULT_HEIGHT
+  };
+
+  const validatedState = { ...defaults, ...state };
+
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+
+  // If left is null, calculate it from right
+  if (validatedState.left === null) {
+    validatedState.left = viewportWidth - validatedState.width - validatedState.right;
+  }
+
+  // Check if window is out of bounds
+  const isOutOfBounds =
+    validatedState.top < 0 ||
+    validatedState.left < 0 ||
+    validatedState.top > viewportHeight - 50 || // 50px buffer for title bar
+    validatedState.left > viewportWidth - 50;  // 50px buffer for visibility
+
+  if (isOutOfBounds) {
+    console.warn('[Content] Window position is out of bounds. Resetting to default.');
+    return { ...defaults };
+  }
+
+  return validatedState;
 }
 
 /**

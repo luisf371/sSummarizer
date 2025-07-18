@@ -115,10 +115,10 @@ async function handleIconClick(tab) {
             console.log('[Background] First 200 chars:', transcriptText.substring(0, 200));
             console.log('[Background] Last 200 chars:', transcriptText.substring(Math.max(0, transcriptText.length - 200)));
             
-            // Log full content without chunking
-            console.log('[Background] ===== FULL TRANSCRIPT CONTENT =====');
-            console.log('[Background] Full transcript:', transcriptText);
-            console.log('[Background] ===== END TRANSCRIPT CONTENT =====');
+            // // Log full content without chunking
+            // console.log('[Background] ===== FULL TRANSCRIPT CONTENT =====');
+            // console.log('[Background] Full transcript:', transcriptText);
+            // console.log('[Background] ===== END TRANSCRIPT CONTENT =====');
           }
           console.log('[Background] ===== END TRANSCRIPT DEBUG =====');
           
@@ -292,19 +292,18 @@ async function makeApiCall(text, uniqueId) {
     console.log('[API] Model:', requestBody.model);
     console.log('[API] System prompt length:', requestBody.messages[0].content.length);
     console.log('[API] User content length:', requestBody.messages[1].content.length);
-    console.log('[API] Streaming enabled:', requestBody.stream);
-    
-    // Log the user content (transcript) without chunking
-    const userContent = requestBody.messages[1].content;
-    console.log('[API] ===== FULL USER CONTENT (TRANSCRIPT) =====');
-    console.log('[API] Full user content:', userContent);
-    console.log('[API] ===== END USER CONTENT =====');
-    
+    console.log('[API] Streaming enabled:', requestBody.stream); 
     // Log system prompt
     console.log('[API] System prompt:', requestBody.messages[0].content);
     console.log('[API] ===== END API REQUEST DEBUG =====');
 
-    console.log('[API] Making request with streaming =', enableStreaming);
+    // Log the user content (transcript) without chunking
+    const userContent = requestBody.messages[1].content;
+    console.log('[API] ===== USER CONTENT =====');
+    console.log('[API] User content:', userContent);
+    console.log('[API] ===== END USER CONTENT =====');
+
+    console.log('[API] Making API Request, Streaming mode is:', enableStreaming);
     const response = await fetch(apiUrl, {
       method: 'POST',
       headers: {

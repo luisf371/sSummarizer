@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "sSummarizer",
-  "version": "1.7",
+  "version": "1.11",
   "description": "Intelligent web content summarization using AI. Supports web pages and YouTube videos with enhanced floating window interface.",
   "icons": {
     "16": "logo.png",
