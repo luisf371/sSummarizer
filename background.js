@@ -17,6 +17,8 @@ let tabIdMap = new Map();
 let abortControllers = new Map();
 // Set of cancelled request IDs to prevent late execution
 let cancelledRequests = new Set();
+// Accumulate full responses for history tracking
+let responseAccumulators = new Map();
 
 // Configuration constants
 const CONFIG = {
@@ -26,11 +28,15 @@ const CONFIG = {
   YOUTUBE_TRANSCRIPT_TIMEOUT: 10000
 };
 
-// Add message listener for stopping API requests
+// Add message listener for stopping API requests and handling follow-ups
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   console.log('[Background] Received message:', request);
   if (request.action === 'stopApiRequest') {
     stopApiRequest(request.uniqueId);
+    sendResponse({ success: true });
+  } else if (request.action === 'submitFollowUp') {
+    // Handle follow-up question
+    makeApiCall(request.messages, request.uniqueId);
     sendResponse({ success: true });
   }
 });
@@ -213,9 +219,7 @@ function truncateText(text, maxLength = CONFIG.MAX_TEXT_LENGTH) {
 // Note: YouTube transcript fetching is now handled entirely by the content script
 // using the same approach as the Python youtube-transcript-api implementation
 
-async function makeApiCall(text, uniqueId) {
-  console.log('[API] makeApiCall text length=', text.length);
-  
+async function makeApiCall(inputData, uniqueId) {
   // Check if the request was explicitly cancelled
   if (cancelledRequests.has(uniqueId)) {
     console.log(`[API] Request ${uniqueId} was cancelled, skipping API call`);
@@ -228,30 +232,57 @@ async function makeApiCall(text, uniqueId) {
     console.log(`[API] Request ${uniqueId} was already closed/cancelled, skipping API call`);
     return;
   }
-  
-  // Validate and truncate text if necessary
-  if (!text || typeof text !== 'string') {
-    console.error('[API] Invalid text input');
-    await handleApiError(uniqueId, 'Invalid text content');
-    return;
-  }
 
-  const processedText = truncateText(text.trim());
-  if (processedText !== text) {
-    console.log('[API] Text was truncated from', text.length, 'to', processedText.length, 'characters');
-    const tab = tabIdMap.get(uniqueId);
-    if (tab) {
-      await sendMessageSafely(tab, {
-        action: 'appendToFloatingWindow',
-        content: `[Warning] Text was truncated to ${CONFIG.MAX_TEXT_LENGTH} characters for processing.\n\n`,
-        uniqueId
-      });
-    }
-  }
+  // Determine if this is an initial request (string) or follow-up (array)
+  let messages = [];
+  let originalContext = null; // Only set for initial request
 
   const { apiUrl, model, systemPrompt, apiKey, enableStreaming } = await chrome.storage.sync.get(
     ['apiUrl', 'model', 'systemPrompt', 'apiKey', 'enableStreaming']
   );
+  
+  if (typeof inputData === 'string') {
+      // Initial Summary Request
+      const text = inputData;
+      // Validate and truncate text if necessary
+      if (!text) {
+        console.error('[API] Invalid text input');
+        await handleApiError(uniqueId, 'Invalid text content');
+        return;
+      }
+    
+      const processedText = truncateText(text.trim());
+      originalContext = processedText;
+
+      if (processedText !== text) {
+        console.log('[API] Text was truncated from', text.length, 'to', processedText.length, 'characters');
+        const tab = tabIdMap.get(uniqueId);
+        if (tab) {
+          await sendMessageSafely(tab, {
+            action: 'appendToFloatingWindow',
+            content: `[Warning] Text was truncated to ${CONFIG.MAX_TEXT_LENGTH} characters for processing.\n\n`,
+            uniqueId
+          });
+        }
+      }
+      
+      messages = [
+        { role: 'system', content: systemPrompt?.trim() || 'You are a helpful assistant that summarizes content concisely.' },
+        { role: 'user', content: processedText }
+      ];
+  } else if (Array.isArray(inputData)) {
+      // Follow-up Request
+      // We prepend the system prompt (or rely on the one passed, but safer to inject current config)
+      // The inputData is expected to be [{role: 'user', content: ...}, {role: 'assistant', ...}, ...]
+      // We just prepend system prompt
+      messages = [
+          { role: 'system', content: systemPrompt?.trim() || 'You are a helpful assistant that summarizes content concisely.' },
+          ...inputData
+      ];
+  } else {
+      console.error('[API] Invalid input data type');
+      return;
+  }
   
   console.log('[API] retrieved settings:', { apiUrl, model, systemPrompt, apiKey: !!apiKey, enableStreaming });
   
@@ -276,32 +307,23 @@ async function makeApiCall(text, uniqueId) {
   
   // Store the abort controller for potential cancellation
   abortControllers.set(uniqueId, { controller, timeoutId, reader: null });
+  
+  // Initialize response accumulator
+  responseAccumulators.set(uniqueId, '');
 
   try {
     const requestBody = {
       model: model?.trim() || 'gpt-3.5-turbo',
-      messages: [
-        { role: 'system', content: systemPrompt?.trim() || 'You are a helpful assistant that summarizes content concisely.' },
-        { role: 'user', content: processedText }
-      ],
+      messages: messages,
       stream: enableStreaming || false
     };
 
     // Enhanced logging for API request debugging
     console.log('[API] ===== API REQUEST DEBUG =====');
     console.log('[API] Model:', requestBody.model);
-    console.log('[API] System prompt length:', requestBody.messages[0].content.length);
-    console.log('[API] User content length:', requestBody.messages[1].content.length);
     console.log('[API] Streaming enabled:', requestBody.stream); 
-    // Log system prompt
-    console.log('[API] System prompt:', requestBody.messages[0].content);
+    console.log('[API] Message count:', requestBody.messages.length);
     console.log('[API] ===== END API REQUEST DEBUG =====');
-
-    // Log the user content (transcript) without chunking
-    const userContent = requestBody.messages[1].content;
-    console.log('[API] ===== USER CONTENT =====');
-    console.log('[API] User content:', userContent);
-    console.log('[API] ===== END USER CONTENT =====');
 
     console.log('[API] Making API Request, Streaming mode is:', enableStreaming);
     const response = await fetch(apiUrl, {
@@ -343,8 +365,11 @@ async function makeApiCall(text, uniqueId) {
       if (abortInfo) {
         abortInfo.reader = reader;
       }
-
-      // Send the initial part of the summary message
+      
+      // Only send initial empty string if it's the very first request (string input)
+      // Actually, for follow-ups we also want to confirm stream start?
+      // Existing logic sends empty string to 'appendToFloatingWindow'. 
+      // For follow-ups, this is fine, it just ensures the window is ready.
       await sendMessageSafely(tab, {
         action: 'appendToFloatingWindow',
         content: ``,
@@ -371,10 +396,21 @@ async function makeApiCall(text, uniqueId) {
             if (buffer.length > 0) {
               processBuffer(buffer, uniqueId);
             }
+            
+            // Send stream end signal with full response and original context
+            const fullResponse = responseAccumulators.get(uniqueId);
+            await sendMessageSafely(tab, { 
+                action: 'streamEnd', 
+                uniqueId, 
+                fullResponse,
+                originalContext
+            });
+            
             await sendMessageSafely(tab, { action: 'hideLoading', uniqueId });
             abortControllers.delete(uniqueId);
             cancelledRequests.delete(uniqueId);
-            tabIdMap.delete(uniqueId);
+            // tabIdMap.delete(uniqueId); // Keep mapping for follow-ups
+            // responseAccumulators.delete(uniqueId); // Keep accumulator or reset? Better to keep until next request overrides it or window close
             break;
           }
           buffer += decoder.decode(value, { stream: true });
@@ -388,7 +424,13 @@ async function makeApiCall(text, uniqueId) {
         }
         abortControllers.delete(uniqueId);
         cancelledRequests.delete(uniqueId);
-        tabIdMap.delete(uniqueId);
+        // Only clean up if it's a real error that breaks the session? 
+        // If stream just fails, user might retry. 
+        // But for now let's keep error behavior as is, but consider removing tabIdMap delete if we want to allow retry.
+        // For safety, on error we probably kill the session or handleApiError does it.
+        // handleApiError does delete it.
+        // For AbortError (user stop), we might want to keep it open?
+        // But stopApiRequest deletes it.
       }
     } else {
       // Handle non-streaming response - can clean up immediately
@@ -406,9 +448,18 @@ async function makeApiCall(text, uniqueId) {
           uniqueId
         });
         
+        // Send streamEnd for consistency
+        await sendMessageSafely(tab, { 
+            action: 'streamEnd', 
+            uniqueId, 
+            fullResponse: content,
+            originalContext
+        });
+        
         await sendMessageSafely(tab, { action: 'hideLoading', uniqueId });
         cancelledRequests.delete(uniqueId);
-        tabIdMap.delete(uniqueId);
+        // tabIdMap.delete(uniqueId); // Keep mapping for follow-ups
+        // responseAccumulators.delete(uniqueId);
       } else {
         console.error('[API] No content in response:', responseData);
         throw new Error('No content received from API');
@@ -417,6 +468,7 @@ async function makeApiCall(text, uniqueId) {
   } catch (err) {
     clearTimeout(timeoutId);
     abortControllers.delete(uniqueId);
+    // responseAccumulators.delete(uniqueId); // Keep for inspection?
     console.error('[API] call error:', err);
     
     let errorMessage = 'API request failed';
@@ -507,7 +559,7 @@ async function handleApiError(uniqueId, message) {
     }
   }
   cancelledRequests.delete(uniqueId);
-  tabIdMap.delete(uniqueId);
+  // tabIdMap.delete(uniqueId); // Keep session open for retries
 }
 
 function processBuffer(buffer, uniqueId) {
@@ -533,13 +585,7 @@ function processBuffer(buffer, uniqueId) {
             const jsonLine = line.trim().substring(5).trim();
             if (jsonLine === '[DONE]') {
                 console.log('[API] Stream DONE signal received.');
-                const tab = tabIdMap.get(uniqueId);
-                if (tab) {
-                    chrome.tabs.sendMessage(tab, { action: 'hideLoading', uniqueId });
-                    abortControllers.delete(uniqueId);
-                    cancelledRequests.delete(uniqueId);
-                    tabIdMap.delete(uniqueId);
-                }
+                // Cleanup handled in makeApiCall after stream close
                 continue;
             }
             handleJsonLine(jsonLine, uniqueId);
@@ -559,7 +605,7 @@ function handleJsonLine(jsonLine, uniqueId) {
       return;
     }
     
-    console.log('[API] Processing JSON line:', jsonLine.substring(0, 200));
+    // console.log('[API] Processing JSON line:', jsonLine.substring(0, 200));
     const data = JSON.parse(jsonLine);
     const tab = tabIdMap.get(uniqueId);
     
@@ -568,45 +614,47 @@ function handleJsonLine(jsonLine, uniqueId) {
       return;
     }
     
+    let contentChunk = '';
+
     // Handle streaming content
     if (data.choices?.[0]?.delta?.content) {
-      console.log('[API] Sending content chunk:', data.choices[0].delta.content.substring(0, 50));
+      contentChunk = data.choices[0].delta.content;
+      // console.log('[API] Sending content chunk:', contentChunk.substring(0, 50));
       chrome.tabs.sendMessage(tab, {
         action: 'appendToFloatingWindow',
-        content: data.choices[0].delta.content,
+        content: contentChunk,
         uniqueId
       }, (response) => {
         if (chrome.runtime.lastError) {
-          console.error('[API] Error sending content to tab:', chrome.runtime.lastError.message);
+          // console.error('[API] Error sending content to tab:', chrome.runtime.lastError.message);
         }
       });
     }
     
-    // Handle completion
-    if (data.choices?.[0]?.finish_reason === 'stop') {
-      console.log('[API] Stream finished');
-      chrome.tabs.sendMessage(tab, { action: 'hideLoading', uniqueId });
-      abortControllers.delete(uniqueId);
-      cancelledRequests.delete(uniqueId);
-      tabIdMap.delete(uniqueId);
-    }
-    
-    // Handle non-streaming responses (some APIs return complete content at once)
+    // Handle non-streaming responses (some APIs return complete content at once in stream mode?)
     if (data.choices?.[0]?.message?.content && !data.choices?.[0]?.delta) {
-      console.log('[API] Sending complete content:', data.choices[0].message.content.substring(0, 50));
+      contentChunk = data.choices[0].message.content;
+      console.log('[API] Sending complete content:', contentChunk.substring(0, 50));
       chrome.tabs.sendMessage(tab, {
         action: 'appendToFloatingWindow',
-        content: data.choices[0].message.content,
+        content: contentChunk,
         uniqueId
       }, (response) => {
         if (chrome.runtime.lastError) {
           console.error('[API] Error sending complete content to tab:', chrome.runtime.lastError.message);
         }
       });
-      chrome.tabs.sendMessage(tab, { action: 'hideLoading', uniqueId });
-      abortControllers.delete(uniqueId);
-      cancelledRequests.delete(uniqueId);
-      tabIdMap.delete(uniqueId);
+    }
+
+    // Accumulate content
+    if (contentChunk) {
+        const current = responseAccumulators.get(uniqueId) || '';
+        responseAccumulators.set(uniqueId, current + contentChunk);
+    }
+    
+    // Handle completion (finish_reason) - just log, cleanup in makeApiCall
+    if (data.choices?.[0]?.finish_reason === 'stop') {
+      // console.log('[API] Stream finished via stop reason');
     }
     
   } catch (e) {

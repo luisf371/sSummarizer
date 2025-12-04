@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.0 - Follow-up Questions
+- **Interactive Chat**:
+  - Added a chat input field to the floating window.
+  - Users can now ask follow-up questions to the AI about the summary.
+  - Retains conversation context within the window session.
+- **Architecture**:
+  - Implemented message-based API handling in background script.
+  - Improved stream handling to accumulate and store full conversation history.
+
 ## 1.9 - Timestamps
  -  Timestamp feature for better control and/or information from subtitles
 

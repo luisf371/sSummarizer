@@ -10,6 +10,8 @@ let windowPositions = new Map();
 let windowSizes = new Map();
 let contentBuffers = new Map();
 let userScrolledUp = new Map();
+let chatHistories = new Map();
+let isChatProcessing = new Map();
 
  // Configuration constants
  const UI_CONFIG = {
@@ -40,6 +42,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       break;
     case 'hideLoading':
       hideLoading(request.uniqueId);
+      sendResponse({ success: true });
+      break;
+    case 'streamEnd':
+      handleStreamEnd(request);
       sendResponse({ success: true });
       break;
   }
@@ -94,15 +100,23 @@ async function createFloatingWindow(uniqueId) {
           </div>
         </div>
         <div id="content-${uniqueId}" style="flex-grow: 1; overflow-y: auto; padding: 16px; font-size: ${initialFontSize}px; background-color: #1e1e1e; color: #cfcfcf; position: relative; line-height: 1.5; word-wrap: break-word;">
-          <div id="loading-overlay-${uniqueId}" style="display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.7); display: flex; justify-content: center; align-items: center; border-radius: 0 0 8px 8px;">
+          <div id="loading-overlay-${uniqueId}" style="display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.7); display: flex; justify-content: center; align-items: center; border-radius: 0 0 8px 8px; z-index: 10;">
             <div class="spinner" style="border: 3px solid rgba(255,255,255,0.1); border-left-color: #4a9eff; border-radius: 50%; width: 32px; height: 32px; animation: spin 1s linear infinite;"></div>
           </div>
         </div>
-        <div id="resize-handle-${uniqueId}" style="width: 12px; height: 12px; background: linear-gradient(135deg, #555, #777); position: absolute; right: 0; bottom: 0; cursor: se-resize; border-radius: 0 0 8px 0;"></div>
+        
+        <div id="chat-area-${uniqueId}" style="padding: 10px; border-top: 1px solid #333; background: #252525; display: flex; gap: 8px; align-items: center; border-radius: 0 0 8px 8px;">
+           <input type="text" id="chat-input-${uniqueId}" placeholder="Ask a follow-up..." disabled style="flex-grow: 1; background: #1e1e1e; border: 1px solid #444; color: #fff; padding: 8px 12px; border-radius: 4px; outline: none; font-family: inherit; font-size: 13px; transition: border-color 0.2s;">
+           <button id="chat-send-${uniqueId}" disabled style="background: #4a9eff; border: none; color: white; border-radius: 4px; padding: 8px 12px; cursor: pointer; font-size: 13px; transition: opacity 0.2s; opacity: 0.6;">➤</button>
+        </div>
+
+        <div id="resize-handle-${uniqueId}" style="width: 12px; height: 12px; background: linear-gradient(135deg, #555, #777); position: absolute; right: 0; bottom: 0; cursor: se-resize; border-radius: 0 0 8px 0; z-index: 20;"></div>
       </div>
       <style>
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         #floating-window-${uniqueId} button:hover { background-color: rgba(255, 255, 255, 0.1) !important; }
+        #floating-window-${uniqueId} #chat-send-${uniqueId}:not(:disabled):hover { opacity: 0.9; }
+        #floating-window-${uniqueId} #chat-input-${uniqueId}:focus { border-color: #4a9eff; }
         #floating-window-${uniqueId} #content-${uniqueId}::-webkit-scrollbar { width: 8px; }
         #floating-window-${uniqueId} #content-${uniqueId}::-webkit-scrollbar-track { background: #2a2a2a; border-radius: 4px; }
         #floating-window-${uniqueId} #content-${uniqueId}::-webkit-scrollbar-thumb { background: #555; border-radius: 4px; }
@@ -154,6 +168,11 @@ async function createFloatingWindow(uniqueId) {
           margin: 8px 0; 
           line-height: 1.6; 
         }
+        #floating-window-${uniqueId} hr {
+          border: 0;
+          border-top: 1px solid #444;
+          margin: 16px 0;
+        }
       </style>
     `;
     
@@ -165,6 +184,7 @@ async function createFloatingWindow(uniqueId) {
     textSizes.set(uniqueId, initialFontSize);
     windowPositions.set(uniqueId, position);
     userScrolledUp.set(uniqueId, false);
+    isChatProcessing.set(uniqueId, false);
 
     const win = floatingWindow.querySelector(`#floating-window-${uniqueId}`);
     const contentEl = win.querySelector(`#content-${uniqueId}`);
@@ -180,6 +200,7 @@ async function createFloatingWindow(uniqueId) {
     
     // Add event listeners with error handling
     setupWindowEventListeners(uniqueId, win);
+    setupChatListeners(uniqueId, win);
     
     // Make window interactive
     makeDraggable(win, win.querySelector(`#title-bar-${uniqueId}`));
@@ -671,4 +692,105 @@ function makeResizable(el, handle) {
         el.style.width = newWidth + 'px';
         el.style.height = newHeight + 'px';
     }
+}
+
+// ———— Chat Functionality ————
+
+function handleStreamEnd(request) {
+  const { uniqueId, fullResponse, originalContext } = request;
+  
+  // Initialize history if not present
+  if (!chatHistories.has(uniqueId)) {
+    chatHistories.set(uniqueId, []);
+  }
+  const history = chatHistories.get(uniqueId);
+  
+  // If originalContext is provided (initial request), add it first
+  if (originalContext && history.length === 0) {
+    history.push({ role: 'user', content: originalContext });
+  }
+  
+  // Add the assistant's response
+  history.push({ role: 'assistant', content: fullResponse });
+  
+  // Enable chat input
+  const win = floatingWindows.get(uniqueId);
+  if (win) {
+    const input = win.querySelector(`#chat-input-${uniqueId}`);
+    const btn = win.querySelector(`#chat-send-${uniqueId}`);
+    if (input) {
+        input.disabled = false;
+        input.placeholder = "Ask a follow-up...";
+    }
+    if (btn) btn.disabled = false;
+  }
+  
+  isChatProcessing.set(uniqueId, false);
+}
+
+function setupChatListeners(uniqueId, win) {
+    const input = win.querySelector(`#chat-input-${uniqueId}`);
+    const sendBtn = win.querySelector(`#chat-send-${uniqueId}`);
+    
+    const submit = () => {
+        const text = input ? input.value.trim() : '';
+        if (text && !isChatProcessing.get(uniqueId)) {
+            sendFollowUp(uniqueId, text);
+            if (input) input.value = '';
+        }
+    };
+
+    if (input) {
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                submit();
+            }
+        });
+    }
+    
+    if (sendBtn) {
+        sendBtn.addEventListener('click', submit);
+    }
+}
+
+function sendFollowUp(uniqueId, question) {
+    isChatProcessing.set(uniqueId, true);
+    
+    // Disable input
+    const win = floatingWindows.get(uniqueId);
+    if (win) {
+        const input = win.querySelector(`#chat-input-${uniqueId}`);
+        const btn = win.querySelector(`#chat-send-${uniqueId}`);
+        if (input) {
+            input.disabled = true;
+            input.placeholder = "Thinking...";
+        }
+        if (btn) btn.disabled = true;
+        
+        // Format question
+        const formattedQuestion = `\n\n---\n**You:** ${question}\n\n**AI:** `;
+        
+        // Render question immediately
+        handleMessage(formattedQuestion, uniqueId);
+    }
+
+    // Update history
+    if (!chatHistories.has(uniqueId)) {
+        chatHistories.set(uniqueId, []);
+    }
+    const history = chatHistories.get(uniqueId);
+    history.push({ role: 'user', content: question });
+        
+    // Send to background
+    chrome.runtime.sendMessage({
+        action: 'submitFollowUp',
+        uniqueId: uniqueId,
+        messages: history
+    }, (response) => {
+        if (chrome.runtime.lastError) {
+            console.error('Error sending follow-up:', chrome.runtime.lastError.message);
+            isChatProcessing.set(uniqueId, false);
+        }
+    });
 }

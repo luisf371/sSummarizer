@@ -18,3 +18,14 @@ Options Page v2
 - Re-add /chat/completions in the backend code?
 - Modify System Prompt default text
 - ~~Ensure Stream mode is Enabled by default~~
+
+
+# Follow on question
+Initial implementation added.
+
+# Reddit module
+Currently there's 2 module,
+1. Youtube extractor with 2 methods of extraction.
+2. Everything else Raw content extractor
+Intent: provide reddit specific extraction logic that cleans the input.
+
