@@ -158,15 +158,7 @@ async function handleIconClick(tab) {
               const extractedContent = results?.[0]?.result;
               if (extractedContent) {
                   console.log('[Background] Reddit Extraction Result:', extractedContent.substring(0, 500) + '...');
-                  
-                  // DEBUG MODE: Display content directly, skip API
-                  sendMessageSafely(tab.id, { action: 'hideLoading', uniqueId });
-                  sendMessageSafely(tab.id, {
-                      action: 'appendToFloatingWindow',
-                      content: `**[DEBUG MODE - Reddit Extraction]**\n\n${extractedContent}`,
-                      uniqueId
-                  });
-                  // DO NOT CALL makeApiCall(extractedContent, uniqueId);
+                  makeApiCall(extractedContent, uniqueId);
               } else {
                   handleApiError(uniqueId, 'Failed to extract Reddit content. Please ensure you are on a thread page.');
               }
@@ -266,13 +258,50 @@ async function makeApiCall(inputData, uniqueId) {
     return;
   }
 
+  // Load settings first to check debug mode
+  const { apiUrl, model, systemPrompt, apiKey, enableStreaming, enableDebugMode } = await chrome.storage.sync.get(
+    ['apiUrl', 'model', 'systemPrompt', 'apiKey', 'enableStreaming', 'enableDebugMode']
+  );
+
+  // Universal Debug Mode Check - intercept BEFORE any processing/truncation
+  if (enableDebugMode) {
+      console.log('[API] Debug Mode Enabled - intercepting request');
+      const tab = tabIdMap.get(uniqueId);
+      if (tab) {
+          let debugContent = '';
+          let rawInput = inputData;
+          
+          if (typeof inputData === 'string') {
+              debugContent = inputData;
+          } else if (Array.isArray(inputData)) {
+              // For follow-ups, show the latest user message or full history
+              debugContent = JSON.stringify(inputData, null, 2);
+              rawInput = null; // Don't treat as original context string
+          }
+
+          await sendMessageSafely(tab, { action: 'hideLoading', uniqueId });
+          await sendMessageSafely(tab, {
+              action: 'appendToFloatingWindow',
+              content: `**[DEBUG MODE]**\n\n**Model:** ${model}\n**Target URL:** ${apiUrl}\n**Content Payload (${debugContent.length} chars):**\n\n${debugContent}\n`,
+              uniqueId
+          });
+          
+          // Unlock chat if it was an initial request
+          if (typeof inputData === 'string') {
+             await sendMessageSafely(tab, { 
+                action: 'streamEnd', 
+                uniqueId, 
+                fullResponse: "[Debug Mode: No API Call Made]",
+                originalContext: inputData
+            });
+          }
+      }
+      return;
+  }
+
   // Determine if this is an initial request (string) or follow-up (array)
   let messages = [];
   let originalContext = null; // Only set for initial request
-
-  const { apiUrl, model, systemPrompt, apiKey, enableStreaming } = await chrome.storage.sync.get(
-    ['apiUrl', 'model', 'systemPrompt', 'apiKey', 'enableStreaming']
-  );
   
   if (typeof inputData === 'string') {
       // Initial Summary Request
@@ -284,19 +313,13 @@ async function makeApiCall(inputData, uniqueId) {
         return;
       }
     
-      const processedText = truncateText(text.trim());
+      const trimmedText = text.trim();
+      const processedText = truncateText(trimmedText);
       originalContext = processedText;
 
-      if (processedText !== text) {
-        console.log('[API] Text was truncated from', text.length, 'to', processedText.length, 'characters');
-        const tab = tabIdMap.get(uniqueId);
-        if (tab) {
-          await sendMessageSafely(tab, {
-            action: 'appendToFloatingWindow',
-            content: `[Warning] Text was truncated to ${CONFIG.MAX_TEXT_LENGTH} characters for processing.\n\n`,
-            uniqueId
-          });
-        }
+      if (processedText.length < trimmedText.length) {
+        console.log('[API] Text was truncated from', trimmedText.length, 'to', processedText.length, 'characters');
+        // Warning suppressed for user interface to avoid confusion, logged to console only.
       }
       
       messages = [
@@ -306,8 +329,6 @@ async function makeApiCall(inputData, uniqueId) {
   } else if (Array.isArray(inputData)) {
       // Follow-up Request
       // We prepend the system prompt (or rely on the one passed, but safer to inject current config)
-      // The inputData is expected to be [{role: 'user', content: ...}, {role: 'assistant', ...}, ...]
-      // We just prepend system prompt
       messages = [
           { role: 'system', content: systemPrompt?.trim() || 'You are a helpful assistant that summarizes content concisely.' },
           ...inputData

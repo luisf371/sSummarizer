@@ -13,6 +13,7 @@ document.addEventListener('DOMContentLoaded', function() {
   const redditMaxCommentsInput = document.getElementById('reddit-max-comments');
   const redditDepthInput = document.getElementById('reddit-depth');
   const redditSortInput = document.getElementById('reddit-sort');
+  const enableDebugModeInput = document.getElementById('enable-debug-mode');
   const saveButton = document.querySelector('button[type="submit"]');
   const defaultPromptBtn = document.getElementById('default-prompt-btn');
 
@@ -81,13 +82,14 @@ Final Output Constraints:
       preferredLanguage: (preferredLanguageInput?.value || 'en').trim().toLowerCase(),
       redditMaxComments: parseInt(redditMaxCommentsInput?.value || 20, 10),
       redditDepth: parseInt(redditDepthInput?.value || 1, 10),
-      redditSort: redditSortInput?.value || 'current'
+      redditSort: redditSortInput?.value || 'current',
+      enableDebugMode: enableDebugModeInput?.checked || false
     };
   }
 
   function loadSavedOptions() {
     try {
-      chrome.storage.sync.get(['apiKey', 'apiUrl', 'model', 'systemPrompt', 'enableStreaming', 'includeTimestamps', 'defaultFontSize', 'subtitlePriority', 'preferredLanguage', 'redditMaxComments', 'redditDepth', 'redditSort'], function(result) {
+      chrome.storage.sync.get(['apiKey', 'apiUrl', 'model', 'systemPrompt', 'enableStreaming', 'includeTimestamps', 'defaultFontSize', 'subtitlePriority', 'preferredLanguage', 'redditMaxComments', 'redditDepth', 'redditSort', 'enableDebugMode'], function(result) {
         if (chrome.runtime.lastError) {
           showStatus('Error loading saved settings: ' + chrome.runtime.lastError.message, 'error');
           return;
@@ -107,6 +109,7 @@ Final Output Constraints:
         if (redditMaxCommentsInput) redditMaxCommentsInput.value = result.redditMaxComments || 20;
         if (redditDepthInput) redditDepthInput.value = result.redditDepth !== undefined ? result.redditDepth : 1;
         if (redditSortInput) redditSortInput.value = result.redditSort || 'current';
+        if (enableDebugModeInput) enableDebugModeInput.checked = result.enableDebugMode || false;
         
         systemPromptInput.dispatchEvent(new Event('input', { bubbles: true }));
         console.log('[Options] Loaded saved settings', result);

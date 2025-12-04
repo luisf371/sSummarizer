@@ -172,7 +172,18 @@
             <input type="number" id="default-font-size" name="default-font-size" min="8" max="24" placeholder="14">
             <small class="help-text">Set the initial font size for the summary window (from 8 to 24).</small>
           </div>
+        </div>
 
+        <div class="form-section">
+          <h2>Debug Settings</h2>
+          <div class="form-group form-group-toggle">
+            <label for="enable-debug-mode">Enable Debug Mode</label>
+            <div class="toggle-switch">
+              <input type="checkbox" id="enable-debug-mode" name="enable-debug-mode">
+              <label class="slider" for="enable-debug-mode"></label>
+            </div>
+            <small class="help-text">If enabled, extracted content will be displayed in the window instead of being sent to the AI. Useful for verifying what text is being extracted.</small>
+          </div>
         </div>
       </form>
 
