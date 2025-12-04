@@ -35,6 +35,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     stopApiRequest(request.uniqueId);
     sendResponse({ success: true });
   } else if (request.action === 'submitFollowUp') {
+    // Re-establish tab mapping if lost (e.g. due to Service Worker restart)
+    if (sender.tab && sender.tab.id) {
+        // console.log(`[Background] Restoring tabId map for ${request.uniqueId} -> ${sender.tab.id}`);
+        tabIdMap.set(request.uniqueId, sender.tab.id);
+    }
+
     // Handle follow-up question
     makeApiCall(request.messages, request.uniqueId);
     sendResponse({ success: true });

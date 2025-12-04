@@ -31,7 +31,8 @@ implementation > bug hunt
 Implemented > bug hunt
 
 # Timestamps
-Additional prompt text box when timestamps are enabled - text box grayed out if disabled. when enabled, that prompt is appeneded to the system prompt.
+~~Additional prompt text box when timestamps are enabled - text box grayed out if disabled. when enabled, that prompt is appeneded to the system prompt.~~
+Implemented > bug hunt
 
 # API Endpoints
 Modify to dropdown with known API endpoints
