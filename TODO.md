@@ -13,19 +13,31 @@ Seperate System Prompts for Websites vs Youtube?
 ~~Remember Popup Text Size and/or set a default size in "options"~~
 
 
-Options Page v2
-- Dropdown selection for known API endpoints
-- Re-add /chat/completions in the backend code?
-- Modify System Prompt default text
+~~Options Page v2~~
+~~- Dropdown selection for known API endpoints~~
+~~- Re-add /chat/completions in the backend code?~~
+~~- Modify System Prompt default text~~
 - ~~Ensure Stream mode is Enabled by default~~
 
 
 # Follow on question
-Initial implementation added.
+implementation > bug hunt
 
 # Reddit module
-Currently there's 2 module,
-1. Youtube extractor with 2 methods of extraction.
-2. Everything else Raw content extractor
-Intent: provide reddit specific extraction logic that cleans the input.
+~~Currently there's 2 module,~~
+~~1. Youtube extractor with 2 methods of extraction.~~
+~~2. Everything else Raw content extractor~~
+~~Intent: provide reddit specific extraction logic that cleans the input~~
+Implemented > bug hunt
 
+# Timestamps
+Additional prompt text box when timestamps are enabled - text box grayed out if disabled. when enabled, that prompt is appeneded to the system prompt.
+
+# API Endpoints
+Modify to dropdown with known API endpoints
+Model remains an open text box for easy updates to newer models
+Include a custom to allow custom API endpoints
+Re-add /chat/completions in the backend code?
+
+# Limits
+Validate truncation - is it necessary with modern llm?

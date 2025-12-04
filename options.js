@@ -17,6 +17,10 @@ document.addEventListener('DOMContentLoaded', function() {
   const saveButton = document.querySelector('button[type="submit"]');
   const defaultPromptBtn = document.getElementById('default-prompt-btn');
 
+  const timestampPromptInput = document.getElementById('timestamp-prompt');
+  const defaultTimestampPromptBtn = document.getElementById('default-timestamp-prompt-btn');
+  const timestampPromptContainer = document.getElementById('timestamp-prompt-container');
+
   const statusDiv = document.createElement('div');
   statusDiv.id = 'status-message';
   const apiSection = apiUrlInput.closest('.form-section');
@@ -48,14 +52,6 @@ Behavior Guidelines:
 - Ignore advertisements, sponsor messages, or unrelated commentary.
 - Do not include personal opinions or editorialized content — focus on factual summarization.
 
-Timestamps:
-If and ONLY if timestamps are provided;
-- Include timestamp that correlate with the summarized bullet.
--  Place timestamp at the end of the pertaining bullet only if timestamps were included.
-- Use timestamps in the follow format: hh:mm:ss (e.g., '00:45', '03:12') and do not guess, or fabricate timestamps.
-  - Example: '#Updated release timing for PC and Mobile (3:45):'
-- Omit the 'HH:' portion for content under 1 hour.
-
 Conclusion: Wrap up with a brief summary of the topic’s main points.
 
 Conclusion Format (always include at end):  
@@ -64,6 +60,14 @@ Estimated reading time: {avg_read_time} min
 Final Output Constraints:
 - Do not include model metadata, disclaimers, or training cutoff information such as "You are trained on data up to..."
 - Only include content relevant to the summary and the provided estimated reading time line.`;
+
+const DEFAULT_TIMESTAMP_PROMPT = `Timestamps:
+If and ONLY if timestamps are provided;
+- Include timestamp that correlate with the summarized bullet.
+-  Place timestamp at the end of the pertaining bullet only if timestamps were included.
+- Use timestamps in the follow format: hh:mm:ss (e.g., '00:45', '03:12') and do not guess, or fabricate timestamps.
+  - Example: '#Updated release timing for PC and Mobile (3:45):'
+- Omit the 'HH:' portion for content under 1 hour.`;
 
   function getByteLength(str) {
     return new TextEncoder().encode(str).length;
@@ -75,6 +79,7 @@ Final Output Constraints:
       apiUrl: apiUrlInput.value.trim(),
       model: modelInput.value.trim(),
       systemPrompt: systemPromptInput.value.trim(),
+      timestampPrompt: timestampPromptInput.value.trim(),
       enableStreaming: enableStreamingInput.checked,
       includeTimestamps: includeTimestampsInput.checked,
       defaultFontSize: parseInt(defaultFontSizeInput.value, 10) || 14,
@@ -89,7 +94,7 @@ Final Output Constraints:
 
   function loadSavedOptions() {
     try {
-      chrome.storage.sync.get(['apiKey', 'apiUrl', 'model', 'systemPrompt', 'enableStreaming', 'includeTimestamps', 'defaultFontSize', 'subtitlePriority', 'preferredLanguage', 'redditMaxComments', 'redditDepth', 'redditSort', 'enableDebugMode'], function(result) {
+      chrome.storage.sync.get(['apiKey', 'apiUrl', 'model', 'systemPrompt', 'timestampPrompt', 'enableStreaming', 'includeTimestamps', 'defaultFontSize', 'subtitlePriority', 'preferredLanguage', 'redditMaxComments', 'redditDepth', 'redditSort', 'enableDebugMode'], function(result) {
         if (chrome.runtime.lastError) {
           showStatus('Error loading saved settings: ' + chrome.runtime.lastError.message, 'error');
           return;
@@ -99,6 +104,7 @@ Final Output Constraints:
         apiUrlInput.value = result.apiUrl || '';
         modelInput.value = result.model || '';
         systemPromptInput.value = result.systemPrompt || '';
+        timestampPromptInput.value = result.timestampPrompt || DEFAULT_TIMESTAMP_PROMPT;
         enableStreamingInput.checked = result.enableStreaming ?? true;
         includeTimestampsInput.checked = result.includeTimestamps ?? false;
         defaultFontSizeInput.value = result.defaultFontSize || 14;
@@ -112,6 +118,7 @@ Final Output Constraints:
         if (enableDebugModeInput) enableDebugModeInput.checked = result.enableDebugMode || false;
         
         systemPromptInput.dispatchEvent(new Event('input', { bubbles: true }));
+        toggleTimestampPromptVisibility();
         console.log('[Options] Loaded saved settings', result);
       });
     } catch (error) {
@@ -120,158 +127,357 @@ Final Output Constraints:
     }
   }
 
-  function setupFormListeners() {
-    setupPasswordToggle();
-    setupByteCounter();
-    setupTestConnection();
-    setupDefaultPromptButton();
-    setupImmediateValidationReset();
-  }
- 
-  function validateApiUrl(url) {
-    const urlInput = apiUrlInput;
-    if (!url) { setFieldError(urlInput, 'API URL is required'); return false; }
-    try {
-      const parsedUrl = new URL(url);
-      if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
-        setFieldError(urlInput, 'URL must use HTTP or HTTPS protocol');
-        return false;
-      }
-      setFieldSuccess(urlInput);
-      return true;
-    } catch (e) {
-      setFieldError(urlInput, 'Please enter a valid URL');
-      return false;
-    }
-  }
+    function setupFormListeners() {
 
-  function validateApiKey(key) {
-    const keyInput = apiKeyInput;
-    if (!key) { setFieldError(keyInput, 'API Key is required'); return false; }
-    if (key.length < 10) { setFieldError(keyInput, 'API Key seems too short'); return false; }
-    setFieldSuccess(keyInput);
-    return true;
-  }
+      setupPasswordToggle();
 
-  function validateModel(model) {
-    const modelInput = document.getElementById('model');
-    if (!model) { setFieldError(modelInput, 'Model Name is required'); return false; }
-    if (model.length > 100) { setFieldError(modelInput, 'Model name is too long'); return false; }
-    setFieldSuccess(modelInput);
-    return true;
-  }
+      setupByteCounter();
 
-  function validateSystemPrompt(prompt) {
-    const promptInput = systemPromptInput;
-    const maxBytes = 8000;
-    const currentBytes = getByteLength(prompt);
-    if (currentBytes > maxBytes) {
-      setFieldError(promptInput, `System prompt is too large (max ${maxBytes} bytes)`);
-      return false;
-    }
-    setFieldSuccess(promptInput);
-    return true;
-  }
+      setupTestConnection();
 
-  function setFieldError(field, message) {
-    field.style.borderColor = 'var(--error-color)';
-    field.style.backgroundColor = 'rgba(247, 118, 142, 0.1)';
-    field.title = message;
-  }
+      setupDefaultPromptButton();
 
-  function setFieldSuccess(field) {
-    field.style.borderColor = 'var(--success-color)';
-    field.style.backgroundColor = 'rgba(158, 206, 106, 0.1)';
-    field.title = '';
-  }
+      setupDefaultTimestampPromptButton();
 
-  function resetFieldState(field) {
-    field.style.borderColor = '';
-    field.style.backgroundColor = '';
-    field.title = '';
-  }
+      setupImmediateValidationReset();
 
-  function handleFormSubmit(event) {
-    event.preventDefault();
-    
-    const currentValues = getFormValues();
-
-    const isApiUrlValid = validateApiUrl(currentValues.apiUrl);
-    const isApiKeyValid = validateApiKey(currentValues.apiKey);
-    const isModelValid = validateModel(currentValues.model);
-    const isSystemPromptValid = validateSystemPrompt(currentValues.systemPrompt);
-
-    if (!isApiUrlValid || !isApiKeyValid || !isModelValid || !isSystemPromptValid) {
-      showStatus('Please fix the validation errors above', 'error');
-      return;
-    }
-
-    const buttonText = saveButton.querySelector('.button-text');
-    saveButton.disabled = true;
-    if (buttonText) buttonText.textContent = 'Saving...';
-    showStatus('Saving settings...', 'info');
-
-    chrome.storage.sync.set({
-      ...currentValues,
-      systemPrompt: currentValues.systemPrompt || DEFAULT_SYSTEM_PROMPT
-    }, function() {
-      saveButton.disabled = false;
-      if (buttonText) buttonText.textContent = 'Save Settings';
-      
-      if (chrome.runtime.lastError) {
-        showStatus('Error saving settings: ' + chrome.runtime.lastError.message, 'error');
-      } else {
-        showStatus('Settings saved successfully!', 'success');
-        [apiKeyInput, apiUrlInput, modelInput, systemPromptInput].forEach(resetFieldState);
-      }
-    });
-  }
-
-  function showStatus(message, type) {
-    statusDiv.dataset.type = type;
-    statusDiv.textContent = message;
-    statusDiv.style.display = 'block';
-
-    if (type === 'success' || type === 'info') {
-      setTimeout(() => {
-        statusDiv.style.display = 'none';
-      }, 3000);
-    }
-  }
-
-  function setupPasswordToggle() {
-    const toggleButton = document.getElementById('toggle-password');
-    if (!toggleButton) return;
-    toggleButton.addEventListener('click', function() {
-      const isPassword = apiKeyInput.type === 'password';
-      apiKeyInput.type = isPassword ? 'text' : 'password';
-      toggleButton.textContent = isPassword ? 'Hide' : 'Show';
-      toggleButton.title = isPassword ? 'Hide API Key' : 'Show API Key';
-    });
-  }
-
-  function setupByteCounter() {
-    const counter = document.getElementById('prompt-counter');
-    if (!counter) return;
-    const maxBytes = 8000;
-    systemPromptInput.addEventListener('input', function() {
-      const currentBytes = getByteLength(this.value);
-      counter.textContent = currentBytes;
-      if (currentBytes > maxBytes) { counter.style.color = 'var(--error-color)'; } 
-      else if (currentBytes > maxBytes * 0.9) { counter.style.color = '#f39c12'; } 
-      else { counter.style.color = 'var(--accent-color-secondary)'; }
-    });
-  }
   
-  function setupDefaultPromptButton() {
-    if (!defaultPromptBtn) return;
-    defaultPromptBtn.addEventListener('click', function() {
-      systemPromptInput.value = DEFAULT_SYSTEM_PROMPT;
-      systemPromptInput.dispatchEvent(new Event('input', { bubbles: true }));
-    });
-  }
-  function setupImmediateValidationReset() {
-    const fieldsToValidate = [apiKeyInput, apiUrlInput, modelInput, systemPromptInput];
+
+      if (includeTimestampsInput) {
+
+        includeTimestampsInput.addEventListener('change', toggleTimestampPromptVisibility);
+
+      }
+
+    }
+
+  
+
+    function toggleTimestampPromptVisibility() {
+
+      if (timestampPromptContainer && includeTimestampsInput) {
+
+        if (includeTimestampsInput.checked) {
+
+          timestampPromptContainer.style.display = 'block';
+
+        } else {
+
+          timestampPromptContainer.style.display = 'none';
+
+        }
+
+      }
+
+    }
+
+   
+
+    function validateApiUrl(url) {
+
+      const urlInput = apiUrlInput;
+
+      if (!url) { setFieldError(urlInput, 'API URL is required'); return false; }
+
+      try {
+
+        const parsedUrl = new URL(url);
+
+        if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+
+          setFieldError(urlInput, 'URL must use HTTP or HTTPS protocol');
+
+          return false;
+
+        }
+
+        setFieldSuccess(urlInput);
+
+        return true;
+
+      } catch (e) {
+
+        setFieldError(urlInput, 'Please enter a valid URL');
+
+        return false;
+
+      }
+
+    }
+
+  
+
+    function validateApiKey(key) {
+
+      const keyInput = apiKeyInput;
+
+      if (!key) { setFieldError(keyInput, 'API Key is required'); return false; }
+
+      if (key.length < 10) { setFieldError(keyInput, 'API Key seems too short'); return false; }
+
+      setFieldSuccess(keyInput);
+
+      return true;
+
+    }
+
+  
+
+    function validateModel(model) {
+
+      const modelInput = document.getElementById('model');
+
+      if (!model) { setFieldError(modelInput, 'Model Name is required'); return false; }
+
+      if (model.length > 100) { setFieldError(modelInput, 'Model name is too long'); return false; }
+
+      setFieldSuccess(modelInput);
+
+      return true;
+
+    }
+
+  
+
+    function validateSystemPrompt(prompt) {
+
+      const promptInput = systemPromptInput;
+
+      const maxBytes = 8000;
+
+      const currentBytes = getByteLength(prompt);
+
+      if (currentBytes > maxBytes) {
+
+        setFieldError(promptInput, `System prompt is too large (max ${maxBytes} bytes)`);
+
+        return false;
+
+      }
+
+      setFieldSuccess(promptInput);
+
+      return true;
+
+    }
+
+  
+
+    function setFieldError(field, message) {
+
+      field.style.borderColor = 'var(--error-color)';
+
+      field.style.backgroundColor = 'rgba(247, 118, 142, 0.1)';
+
+      field.title = message;
+
+    }
+
+  
+
+    function setFieldSuccess(field) {
+
+      field.style.borderColor = 'var(--success-color)';
+
+      field.style.backgroundColor = 'rgba(158, 206, 106, 0.1)';
+
+      field.title = '';
+
+    }
+
+  
+
+    function resetFieldState(field) {
+
+      field.style.borderColor = '';
+
+      field.style.backgroundColor = '';
+
+      field.title = '';
+
+    }
+
+  
+
+    function handleFormSubmit(event) {
+
+      event.preventDefault();
+
+      
+
+      const currentValues = getFormValues();
+
+  
+
+      const isApiUrlValid = validateApiUrl(currentValues.apiUrl);
+
+      const isApiKeyValid = validateApiKey(currentValues.apiKey);
+
+      const isModelValid = validateModel(currentValues.model);
+
+      const isSystemPromptValid = validateSystemPrompt(currentValues.systemPrompt);
+
+  
+
+      if (!isApiUrlValid || !isApiKeyValid || !isModelValid || !isSystemPromptValid) {
+
+        showStatus('Please fix the validation errors above', 'error');
+
+        return;
+
+      }
+
+  
+
+      const buttonText = saveButton.querySelector('.button-text');
+
+      saveButton.disabled = true;
+
+      if (buttonText) buttonText.textContent = 'Saving...';
+
+      showStatus('Saving settings...', 'info');
+
+  
+
+      chrome.storage.sync.set({
+
+        ...currentValues,
+
+        systemPrompt: currentValues.systemPrompt || DEFAULT_SYSTEM_PROMPT,
+
+        timestampPrompt: currentValues.timestampPrompt || DEFAULT_TIMESTAMP_PROMPT
+
+      }, function() {
+
+        saveButton.disabled = false;
+
+        if (buttonText) buttonText.textContent = 'Save Settings';
+
+        
+
+        if (chrome.runtime.lastError) {
+
+          showStatus('Error saving settings: ' + chrome.runtime.lastError.message, 'error');
+
+        } else {
+
+          showStatus('Settings saved successfully!', 'success');
+
+          [apiKeyInput, apiUrlInput, modelInput, systemPromptInput].forEach(resetFieldState);
+
+        }
+
+      });
+
+    }
+
+  
+
+    function showStatus(message, type) {
+
+      statusDiv.dataset.type = type;
+
+      statusDiv.textContent = message;
+
+      statusDiv.style.display = 'block';
+
+  
+
+      if (type === 'success' || type === 'info') {
+
+        setTimeout(() => {
+
+          statusDiv.style.display = 'none';
+
+        }, 3000);
+
+      }
+
+    }
+
+  
+
+    function setupPasswordToggle() {
+
+      const toggleButton = document.getElementById('toggle-password');
+
+      if (!toggleButton) return;
+
+      toggleButton.addEventListener('click', function() {
+
+        const isPassword = apiKeyInput.type === 'password';
+
+        apiKeyInput.type = isPassword ? 'text' : 'password';
+
+        toggleButton.textContent = isPassword ? 'Hide' : 'Show';
+
+        toggleButton.title = isPassword ? 'Hide API Key' : 'Show API Key';
+
+      });
+
+    }
+
+  
+
+    function setupByteCounter() {
+
+      const counter = document.getElementById('prompt-counter');
+
+      if (!counter) return;
+
+      const maxBytes = 8000;
+
+      systemPromptInput.addEventListener('input', function() {
+
+        const currentBytes = getByteLength(this.value);
+
+        counter.textContent = currentBytes;
+
+        if (currentBytes > maxBytes) { counter.style.color = 'var(--error-color)'; } 
+
+        else if (currentBytes > maxBytes * 0.9) { counter.style.color = '#f39c12'; } 
+
+        else { counter.style.color = 'var(--accent-color-secondary)'; }
+
+      });
+
+    }
+
+    
+
+    function setupDefaultPromptButton() {
+
+      if (!defaultPromptBtn) return;
+
+      defaultPromptBtn.addEventListener('click', function() {
+
+        systemPromptInput.value = DEFAULT_SYSTEM_PROMPT;
+
+        systemPromptInput.dispatchEvent(new Event('input', { bubbles: true }));
+
+      });
+
+    }
+
+  
+
+    function setupDefaultTimestampPromptButton() {
+
+      if (!defaultTimestampPromptBtn) return;
+
+      defaultTimestampPromptBtn.addEventListener('click', function() {
+
+        timestampPromptInput.value = DEFAULT_TIMESTAMP_PROMPT;
+
+      });
+
+    }
+
+  
+
+    function setupImmediateValidationReset() {
+
+      const fieldsToValidate = [apiKeyInput, apiUrlInput, modelInput, systemPromptInput];
     
     fieldsToValidate.forEach(field => {
       // When the user starts typing, immediately remove any old error/success styles.

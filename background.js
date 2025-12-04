@@ -259,8 +259,8 @@ async function makeApiCall(inputData, uniqueId) {
   }
 
   // Load settings first to check debug mode
-  const { apiUrl, model, systemPrompt, apiKey, enableStreaming, enableDebugMode } = await chrome.storage.sync.get(
-    ['apiUrl', 'model', 'systemPrompt', 'apiKey', 'enableStreaming', 'enableDebugMode']
+  const { apiUrl, model, systemPrompt, timestampPrompt, apiKey, enableStreaming, enableDebugMode, includeTimestamps } = await chrome.storage.sync.get(
+    ['apiUrl', 'model', 'systemPrompt', 'timestampPrompt', 'apiKey', 'enableStreaming', 'enableDebugMode', 'includeTimestamps']
   );
 
   // Universal Debug Mode Check - intercept BEFORE any processing/truncation
@@ -278,11 +278,16 @@ async function makeApiCall(inputData, uniqueId) {
               debugContent = JSON.stringify(inputData, null, 2);
               rawInput = null; // Don't treat as original context string
           }
+          
+          let effectiveSystemPrompt = systemPrompt?.trim() || 'You are a helpful assistant that summarizes content concisely.';
+          if (includeTimestamps && timestampPrompt) {
+            effectiveSystemPrompt += '\n\n' + timestampPrompt.trim();
+          }
 
           await sendMessageSafely(tab, { action: 'hideLoading', uniqueId });
           await sendMessageSafely(tab, {
               action: 'appendToFloatingWindow',
-              content: `**[DEBUG MODE]**\n\n**Model:** ${model}\n**Target URL:** ${apiUrl}\n**Content Payload (${debugContent.length} chars):**\n\n${debugContent}\n`,
+              content: `**[DEBUG MODE]**\n\n**Model:** ${model}\n**Target URL:** ${apiUrl}\n**System Prompt:**\n${effectiveSystemPrompt}\n\n**Content Payload (${debugContent.length} chars):**\n\n${debugContent}\n`,
               uniqueId
           });
           
@@ -302,6 +307,11 @@ async function makeApiCall(inputData, uniqueId) {
   // Determine if this is an initial request (string) or follow-up (array)
   let messages = [];
   let originalContext = null; // Only set for initial request
+  
+  let effectiveSystemPrompt = systemPrompt?.trim() || 'You are a helpful assistant that summarizes content concisely.';
+  if (includeTimestamps && timestampPrompt) {
+      effectiveSystemPrompt += '\n\n' + timestampPrompt.trim();
+  }
   
   if (typeof inputData === 'string') {
       // Initial Summary Request
@@ -323,14 +333,14 @@ async function makeApiCall(inputData, uniqueId) {
       }
       
       messages = [
-        { role: 'system', content: systemPrompt?.trim() || 'You are a helpful assistant that summarizes content concisely.' },
+        { role: 'system', content: effectiveSystemPrompt },
         { role: 'user', content: processedText }
       ];
   } else if (Array.isArray(inputData)) {
       // Follow-up Request
       // We prepend the system prompt (or rely on the one passed, but safer to inject current config)
       messages = [
-          { role: 'system', content: systemPrompt?.trim() || 'You are a helpful assistant that summarizes content concisely.' },
+          { role: 'system', content: effectiveSystemPrompt },
           ...inputData
       ];
   } else {
