@@ -90,7 +90,32 @@
               <input type="checkbox" id="include-timestamps" name="include-timestamps">
               <label class="slider" for="include-timestamps"></label>
             </div>
-            <small class="help-text">Note: Including timestamps increases the text sent to the AI, which may result in higher API costs.</small>
+            <small class="help-text">Note: Including timestamps increases the tokens sent to the API endpoint and may result in higher API costs.</small>
+          </div>
+        </div>
+
+        <div class="form-section">
+          <h2>Subtitle Settings</h2>
+
+          <div class="form-group">
+            <label for="subtitle-priority">Subtitle Type</label>
+            <select id="subtitle-priority" name="subtitle-priority">
+              <option value="auto" selected>Automatic (ASR)</option>
+              <option value="manual">Manual (human-provided)</option>
+            </select>
+            <small class="help-text">Choose to prioritize Automatic Speech Recognition *recommend* or manual subtitles. Automatic fall back if not available.</small>
+          </div>
+
+          <div class="form-group">
+            <label for="preferred-language">Preferred Language</label>
+            <input
+              type="text"
+              id="preferred-language"
+              name="preferred-language"
+              placeholder="en"
+              autocomplete="off"
+            >
+            <small class="help-text">Enter a language code (e.g., en, es, fr). Only one language code at a time. Defaults to English (en).</small>
           </div>
         </div>
 

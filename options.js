@@ -8,6 +8,8 @@ document.addEventListener('DOMContentLoaded', function() {
   const enableStreamingInput = document.getElementById('enable-streaming');
   const includeTimestampsInput = document.getElementById('include-timestamps');
   const defaultFontSizeInput = document.getElementById('default-font-size');
+  const subtitlePriorityInput = document.getElementById('subtitle-priority');
+  const preferredLanguageInput = document.getElementById('preferred-language');
   const saveButton = document.querySelector('button[type="submit"]');
   const defaultPromptBtn = document.getElementById('default-prompt-btn');
 
@@ -25,7 +27,39 @@ document.addEventListener('DOMContentLoaded', function() {
 
   optionsForm.addEventListener('submit', handleFormSubmit);
   
-  const DEFAULT_SYSTEM_PROMPT = 'You are a helpful assistant that summarizes content clearly and concisely. Focus on the main points and key takeaways.';
+const DEFAULT_SYSTEM_PROMPT = `Role: Content Summarizer  
+Task: Analyze transcripts or articles and generate a detailed, structured summary in Markdown format.
+
+Behavior Guidelines:
+
+- Capture all essential points and begin with an introduction summarizing the overall purpose of the content.
+- Use bullet points to organize information clearly and logically.
+- Ensure bullet points provide enough context — do not prioritize brevity; depth is preferred.
+- Limit overall structure to 3 total levels of depth across both headings and bullets:
+  - For headings, use up to '###' only (Heading Level 3).
+  - For bullets, use at most two nested levels under a heading.
+  - Do not combine deep headings ('###') with deep bullet nesting ('-' → '-' → '-').
+  - Avoid any further styles like 'a)', 'i.', or additional indentation.
+- Structure content into sections if the original input contains them (e.g., labeled chapters or natural transitions).
+- Ignore advertisements, sponsor messages, or unrelated commentary.
+- Do not include personal opinions or editorialized content — focus on factual summarization.
+
+Timestamps:
+If and ONLY if timestamps are provided;
+- Include timestamp that correlate with the summarized bullet.
+-  Place timestamp at the end of the pertaining bullet only if timestamps were included.
+- Use timestamps in the follow format: hh:mm:ss (e.g., '00:45', '03:12') and do not guess, or fabricate timestamps.
+  - Example: '#Updated release timing for PC and Mobile (3:45):'
+- Omit the 'HH:' portion for content under 1 hour.
+
+Conclusion: Wrap up with a brief summary of the topic’s main points.
+
+Conclusion Format (always include at end):  
+Estimated reading time: {avg_read_time} min
+
+Final Output Constraints:
+- Do not include model metadata, disclaimers, or training cutoff information such as "You are trained on data up to..."
+- Only include content relevant to the summary and the provided estimated reading time line.`;
 
   function getByteLength(str) {
     return new TextEncoder().encode(str).length;
@@ -39,13 +73,15 @@ document.addEventListener('DOMContentLoaded', function() {
       systemPrompt: systemPromptInput.value.trim(),
       enableStreaming: enableStreamingInput.checked,
       includeTimestamps: includeTimestampsInput.checked,
-      defaultFontSize: parseInt(defaultFontSizeInput.value, 10) || 14
+      defaultFontSize: parseInt(defaultFontSizeInput.value, 10) || 14,
+      subtitlePriority: (subtitlePriorityInput?.value || 'auto'),
+      preferredLanguage: (preferredLanguageInput?.value || 'en').trim().toLowerCase()
     };
   }
 
   function loadSavedOptions() {
     try {
-      chrome.storage.sync.get(['apiKey', 'apiUrl', 'model', 'systemPrompt', 'enableStreaming', 'includeTimestamps', 'defaultFontSize'], function(result) {
+      chrome.storage.sync.get(['apiKey', 'apiUrl', 'model', 'systemPrompt', 'enableStreaming', 'includeTimestamps', 'defaultFontSize', 'subtitlePriority', 'preferredLanguage'], function(result) {
         if (chrome.runtime.lastError) {
           showStatus('Error loading saved settings: ' + chrome.runtime.lastError.message, 'error');
           return;
@@ -58,6 +94,10 @@ document.addEventListener('DOMContentLoaded', function() {
         enableStreamingInput.checked = result.enableStreaming ?? true;
         includeTimestampsInput.checked = result.includeTimestamps ?? false;
         defaultFontSizeInput.value = result.defaultFontSize || 14;
+        //if (subtitlePriorityInput) subtitlePriorityInput.value = result.subtitlePriority || 'auto';
+        //if (preferredLanguageInput) preferredLanguageInput.value = result.preferredLanguage || 'en';
+        subtitlePriorityInput.value = result.subtitlePriority || 'auto';
+        preferredLanguageInput.value = result.preferredLanguage || 'en';
         
         systemPromptInput.dispatchEvent(new Event('input', { bubbles: true }));
         console.log('[Options] Loaded saved settings', result);

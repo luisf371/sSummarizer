@@ -134,14 +134,31 @@ async function getTranscriptViaInternalAPI(videoId) {
     }
     
     console.log('[YT Extractor] Found caption tracks:', captions.captionTracks.length);
-    
-    // Step 5: Find the best caption track (prioritize English, then auto-generated)
+
+    // Step 5: Load user preferences and select best caption track
+    const { subtitlePriority, preferredLanguage } = await new Promise(resolve =>
+      chrome.storage.sync.get({ subtitlePriority: 'auto', preferredLanguage: 'en' }, resolve)
+    );
+    const lang = (preferredLanguage || 'en').toLowerCase();
+    const preferAuto = (subtitlePriority || 'auto') === 'auto';
     const tracks = captions.captionTracks;
-    let selectedTrack = tracks.find(t => t.languageCode === 'en' && t.kind !== 'asr'); // Manual English
-    if (!selectedTrack) selectedTrack = tracks.find(t => t.languageCode === 'en' && t.kind === 'asr'); // Auto English
-    if (!selectedTrack) selectedTrack = tracks.find(t => t.kind !== 'asr'); // Any manual
-    if (!selectedTrack) selectedTrack = tracks.find(t => t.kind === 'asr'); // Any auto
-    if (!selectedTrack && tracks.length > 0) selectedTrack = tracks[0]; // First available
+    const isAuto = (t) => t.kind === 'asr';
+    const isLang = (t, code) => (t.languageCode || '').toLowerCase() === code;
+
+    let selectedTrack;
+    if (preferAuto) {
+      selectedTrack = tracks.find(t => isLang(t, lang) && isAuto(t))
+        || tracks.find(t => isLang(t, lang) && !isAuto(t))
+        || tracks.find(t => isAuto(t))
+        || tracks.find(t => !isAuto(t))
+        || (tracks.length > 0 ? tracks[0] : null);
+    } else {
+      selectedTrack = tracks.find(t => isLang(t, lang) && !isAuto(t))
+        || tracks.find(t => isLang(t, lang) && isAuto(t))
+        || tracks.find(t => !isAuto(t))
+        || tracks.find(t => isAuto(t))
+        || (tracks.length > 0 ? tracks[0] : null);
+    }
     
     if (!selectedTrack?.baseUrl) {
       console.log('[YT Extractor] No suitable caption track found');
@@ -157,6 +174,11 @@ async function getTranscriptViaInternalAPI(videoId) {
     let captionUrl = selectedTrack.baseUrl;
     // Clean the URL (remove fmt=srv3 as per Python implementation)
     captionUrl = captionUrl.replace('&fmt=srv3', '');
+
+    // If different language but translatable, request translation to preferred language
+    if (selectedTrack?.languageCode && selectedTrack.languageCode.toLowerCase() !== lang && selectedTrack?.isTranslatable) {
+      captionUrl += `&tlang=${encodeURIComponent(lang)}`;
+    }
     
     console.log('[YT Extractor] Fetching captions from URL:', captionUrl);
     
@@ -274,12 +296,12 @@ async function parseYouTubeCaptionXML(xmlText) {
         fullTranscript = snippets.map(s => s.text).join(' ');
     }
 
-    // Append timestamp info
-    const subtitleInfo = `
-
-- - - - - - - - - - - - - -
-Input contains timestamps: ${includeTimestamps}`;
-    fullTranscript += subtitleInfo;
+//    // Append timestamp info
+//    const subtitleInfo = `
+//
+//- - - - - - - - - - - - - -
+//Input contains timestamps: ${includeTimestamps}`;
+//    fullTranscript += subtitleInfo;
 
     console.log('[YT Extractor] Full transcript length:', fullTranscript.length);
     return fullTranscript;
