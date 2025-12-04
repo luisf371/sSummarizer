@@ -84,10 +84,13 @@ async function createFloatingWindow(uniqueId) {
     }
 
     const floatingWindow = document.createElement('div');
+    // Wrapper needs to be unobtrusive
+    floatingWindow.style.all = 'initial'; 
+    
     const positionStyle = position.left !== null ? `top: ${position.top}px; left: ${position.left}px;` : `top: ${position.top}px; right: ${position.right}px;`;
 
     floatingWindow.innerHTML = `
-      <div id="floating-window-${uniqueId}" style="position: fixed; ${positionStyle} z-index: 9999; background-color: #1e1e1e; color: #cfcfcf; border: 1px solid #333; border-radius: 8px; width: ${size.width}px; height: ${size.height}px; display: flex; flex-direction: column; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; backdrop-filter: blur(10px);">
+      <div id="floating-window-${uniqueId}" style="position: fixed; ${positionStyle} z-index: 9999; background-color: #1e1e1e; color: #cfcfcf; border: 1px solid #333; border-radius: 8px; width: ${size.width}px; height: ${size.height}px; display: flex; flex-direction: column; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; backdrop-filter: blur(10px); box-sizing: border-box;">
         <div id="title-bar-${uniqueId}" style="padding: 12px 16px; background: linear-gradient(135deg, #2e2e2e, #3a3a3a); cursor: move; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #444; border-radius: 8px 8px 0 0; user-select: none;">
           <span style="font-weight: 600; color: #f0f0f0; font-size: 14px;">AI Summarizer</span>
           <div style="display: flex; align-items: center; gap: 8px;">
@@ -107,14 +110,75 @@ async function createFloatingWindow(uniqueId) {
         
         <div id="chat-area-${uniqueId}" style="padding: 10px; border-top: 1px solid #333; background: #252525; display: flex; gap: 8px; align-items: center; border-radius: 0 0 8px 8px;">
            <input type="text" id="chat-input-${uniqueId}" placeholder="Ask a follow-up..." disabled style="flex-grow: 1; background: #1e1e1e; border: 1px solid #444; color: #fff; padding: 8px 12px; border-radius: 4px; outline: none; font-family: inherit; font-size: 13px; transition: border-color 0.2s;">
-           <button id="chat-send-${uniqueId}" disabled style="background: #4a9eff; border: none; color: white; border-radius: 4px; padding: 8px 12px; cursor: pointer; font-size: 13px; transition: opacity 0.2s; opacity: 0.6;">➤</button>
+           <button id="chat-send-${uniqueId}" disabled style="background: #4a9eff; border: none; color: white; border-radius: 4px; width: 32px; height: 32px; padding: 0; display: flex; align-items: center; justify-content: center; flex-shrink: 0; cursor: pointer; font-size: 13px; transition: opacity 0.2s; opacity: 0.6;">➤</button>
         </div>
 
         <div id="resize-handle-${uniqueId}" style="width: 12px; height: 12px; background: linear-gradient(135deg, #555, #777); position: absolute; right: 0; bottom: 0; cursor: se-resize; border-radius: 0 0 8px 0; z-index: 20;"></div>
       </div>
       <style>
+        /* CSS Reset for the floating window */
+        #floating-window-${uniqueId}, #floating-window-${uniqueId} * {
+          box-sizing: border-box;
+          margin: 0;
+          padding: 0;
+          line-height: normal;
+          -webkit-font-smoothing: antialiased;
+          -moz-osx-font-smoothing: grayscale;
+        }
+
+        /* Aggressive button reset for title bar to prevent bleeding */
+        #floating-window-${uniqueId} #title-bar-${uniqueId} button {
+          all: initial; /* Reset all properties */
+          display: inline-block;
+          background: none !important;
+          border: none !important;
+          box-shadow: none !important;
+          text-shadow: none !important;
+          min-width: 0 !important;
+          min-height: 0 !important;
+          width: auto !important;
+          height: auto !important;
+          margin: 0 !important;
+          padding: 4px 8px !important; /* Restore desired padding */
+          font-family: inherit !important;
+          font-size: 14px !important; /* Explicit size */
+          color: #f0f0f0 !important;
+          cursor: pointer !important;
+          text-transform: none !important;
+          letter-spacing: normal !important;
+          border-radius: 4px !important;
+          appearance: none !important;
+          box-sizing: border-box !important;
+          line-height: 1 !important;
+          transition: background-color 0.2s !important;
+        }
+
+        /* Specific overrides for font size buttons to match original intent */
+        #floating-window-${uniqueId} #decrease-font-${uniqueId},
+        #floating-window-${uniqueId} #increase-font-${uniqueId} {
+             padding: 4px 6px !important;
+             font-size: 12px !important;
+        }
+        #floating-window-${uniqueId} #increase-font-${uniqueId} {
+             font-size: 14px !important;
+        }
+
+        /* Generic button reset for other areas if needed */
+        #floating-window-${uniqueId} button:not([id*="title-bar"]) {
+          font-family: inherit;
+          white-space: nowrap;
+          text-align: center;
+          text-decoration: none;
+        }
+
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        #floating-window-${uniqueId} button:hover { background-color: rgba(255, 255, 255, 0.1) !important; }
+        
+        /* Hover effects */
+        #floating-window-${uniqueId} #title-bar-${uniqueId} button:hover { 
+            background-color: rgba(255, 255, 255, 0.1) !important; 
+        }
+        
+        #floating-window-${uniqueId} #chat-send-${uniqueId}:not(:disabled):hover { opacity: 0.9; }
         #floating-window-${uniqueId} #chat-send-${uniqueId}:not(:disabled):hover { opacity: 0.9; }
         #floating-window-${uniqueId} #chat-input-${uniqueId}:focus { border-color: #4a9eff; }
         #floating-window-${uniqueId} #content-${uniqueId}::-webkit-scrollbar { width: 8px; }
