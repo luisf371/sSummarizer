@@ -10,6 +10,9 @@ document.addEventListener('DOMContentLoaded', function() {
   const defaultFontSizeInput = document.getElementById('default-font-size');
   const subtitlePriorityInput = document.getElementById('subtitle-priority');
   const preferredLanguageInput = document.getElementById('preferred-language');
+  const redditMaxCommentsInput = document.getElementById('reddit-max-comments');
+  const redditDepthInput = document.getElementById('reddit-depth');
+  const redditSortInput = document.getElementById('reddit-sort');
   const saveButton = document.querySelector('button[type="submit"]');
   const defaultPromptBtn = document.getElementById('default-prompt-btn');
 
@@ -75,13 +78,16 @@ Final Output Constraints:
       includeTimestamps: includeTimestampsInput.checked,
       defaultFontSize: parseInt(defaultFontSizeInput.value, 10) || 14,
       subtitlePriority: (subtitlePriorityInput?.value || 'auto'),
-      preferredLanguage: (preferredLanguageInput?.value || 'en').trim().toLowerCase()
+      preferredLanguage: (preferredLanguageInput?.value || 'en').trim().toLowerCase(),
+      redditMaxComments: parseInt(redditMaxCommentsInput?.value || 20, 10),
+      redditDepth: parseInt(redditDepthInput?.value || 1, 10),
+      redditSort: redditSortInput?.value || 'current'
     };
   }
 
   function loadSavedOptions() {
     try {
-      chrome.storage.sync.get(['apiKey', 'apiUrl', 'model', 'systemPrompt', 'enableStreaming', 'includeTimestamps', 'defaultFontSize', 'subtitlePriority', 'preferredLanguage'], function(result) {
+      chrome.storage.sync.get(['apiKey', 'apiUrl', 'model', 'systemPrompt', 'enableStreaming', 'includeTimestamps', 'defaultFontSize', 'subtitlePriority', 'preferredLanguage', 'redditMaxComments', 'redditDepth', 'redditSort'], function(result) {
         if (chrome.runtime.lastError) {
           showStatus('Error loading saved settings: ' + chrome.runtime.lastError.message, 'error');
           return;
@@ -98,6 +104,9 @@ Final Output Constraints:
         //if (preferredLanguageInput) preferredLanguageInput.value = result.preferredLanguage || 'en';
         subtitlePriorityInput.value = result.subtitlePriority || 'auto';
         preferredLanguageInput.value = result.preferredLanguage || 'en';
+        if (redditMaxCommentsInput) redditMaxCommentsInput.value = result.redditMaxComments || 20;
+        if (redditDepthInput) redditDepthInput.value = result.redditDepth !== undefined ? result.redditDepth : 1;
+        if (redditSortInput) redditSortInput.value = result.redditSort || 'current';
         
         systemPromptInput.dispatchEvent(new Event('input', { bubbles: true }));
         console.log('[Options] Loaded saved settings', result);

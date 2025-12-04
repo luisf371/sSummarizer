@@ -419,3 +419,193 @@ async function extractVideoDescription() {
 function getPageContent() {
   return document.body.innerText;
 }
+
+// ————————————————————————————————————————————————————————————————————————————————
+// REDDIT EXTRACTOR
+// ————————————————————————————————————————————————————————————————————————————————
+
+/**
+ * Extract content from a Reddit thread, supporting both 'Shreddit' (modern) and Legacy layouts.
+ * Cleans noise (ads, timestamps, sidebars) and limits comment depth/count.
+ */
+async function extractRedditThread() {
+  console.log('[Reddit Extractor] Starting Reddit thread extraction');
+
+  // Load user settings for limits and sort
+  const { redditMaxComments, redditDepth, redditSort } = await new Promise(resolve =>
+    chrome.storage.sync.get({ redditMaxComments: 20, redditDepth: 1, redditSort: 'current' }, resolve)
+  );
+  
+  const maxComments = parseInt(redditMaxComments) || 20;
+  const depthLimit = parseInt(redditDepth) !== undefined ? parseInt(redditDepth) : 1; 
+  const sortType = redditSort || 'current';
+
+  console.log('[Reddit Extractor] Settings:', { maxComments, depthLimit, sortType });
+
+  try {
+    // Handle Sort Logic
+    let doc = document;
+    let isFetched = false;
+
+    if (sortType !== 'current') {
+        const url = new URL(window.location.href);
+        const currentSort = url.searchParams.get('sort');
+        
+        // If current URL already matches requested sort, or if we are on a permalink (single thread often ignores sort unless it's specific),
+        // But usually ?sort= works on threads too.
+        // If current sort != requested, fetch.
+        if (currentSort !== sortType) {
+             console.log(`[Reddit Extractor] Fetching sorted version: ${sortType}`);
+             url.searchParams.set('sort', sortType);
+             url.searchParams.set('limit', '500'); // Request more comments
+             try {
+                 const response = await fetch(url.toString());
+                 if (response.ok) {
+                     const html = await response.text();
+                     const parser = new DOMParser();
+                     doc = parser.parseFromString(html, 'text/html');
+                     isFetched = true;
+                     console.log('[Reddit Extractor] Fetched and parsed sorted HTML');
+                 } else {
+                     console.warn('[Reddit Extractor] Failed to fetch sorted page, using current.');
+                 }
+             } catch (e) {
+                 console.warn('[Reddit Extractor] Error fetching sorted page, using current:', e);
+             }
+        }
+    }
+
+    // 1. Extract Title
+    let title = '';
+    // Modern (Shreddit)
+    const shredditTitle = doc.querySelector('h1[slot="title"], shreddit-title');
+    // Legacy/Standard - Ensure we don't pick up sidebar h1s? usually sidebar h1 is unlikely to be just h1.
+    const standardTitle = doc.querySelector('.Post h1, h1.title, .thing.link .title a.title');
+    // Fallback to generic h1 if specific ones fail, but avoid sidebars
+    title = (shredditTitle || standardTitle || doc.querySelector('h1'))?.textContent?.trim() || 'Untitled Reddit Post';
+
+    // 2. Extract OP Body
+    let opBody = '';
+    
+    // Modern: often in a specific slot or div with data-click-id
+    // Selector refinement: target specific shreddit-post
+    const shredditBody = doc.querySelector('shreddit-post [slot="text-body"], #post-content-body');
+    
+    // Legacy Refined: explicitly avoid .side / .sidebar
+    // The main post is usually in #siteTable > .thing > .entry > .usertext-body
+    const legacyBody = doc.querySelector('#siteTable .thing.link .usertext-body .md, .Post-body');
+    
+    // Fallback, but careful
+    const fallbackBody = doc.querySelector('[data-click-id="text-body"]');
+    
+    opBody = (shredditBody || legacyBody || fallbackBody)?.innerText?.trim() || '(No text content / Image or Link post)';
+
+    // 3. Extract Comments
+    let commentsText = [];
+    
+    // Strategy: Try Shreddit (Web Components) first, then fallback
+    const shredditComments = doc.querySelectorAll('shreddit-comment');
+    
+    if (shredditComments.length > 0) {
+        console.log('[Reddit Extractor] Detected Shreddit (Modern) layout');
+        
+        const allComments = Array.from(shredditComments);
+        // Filter for top-level comments. 
+        // In fetched HTML, attributes might be reliable.
+        const topLevelComments = allComments.filter(c => c.getAttribute('depth') === '0' || !c.parentElement.closest('shreddit-comment'));
+        
+        console.log(`[Reddit Extractor] Found ${topLevelComments.length} top-level comments.`);
+        
+        // Take top N threads
+        const threadsToProcess = topLevelComments.slice(0, maxComments);
+
+        for (const thread of threadsToProcess) {
+            const threadText = extractCommentTree(thread, 0, depthLimit);
+            if (threadText) commentsText.push(threadText);
+        }
+
+    } else {
+        console.log('[Reddit Extractor] Detected Legacy/Standard layout');
+        
+        // Legacy Top Levels are usually direct children of the nestedlisting, OR have data-level=0
+        // We must avoid .child comments
+        const topLevelContainers = doc.querySelectorAll('.sitetable.nestedlisting > .thing.comment, .Comment[data-level="0"]');
+        
+        // If fetched via API/HTML, sometimes structure differs (new reddit vs old reddit view depends on user agent/cookies)
+        // But assuming we get one or the other.
+        
+        const targets = topLevelContainers.length > 0 ? topLevelContainers : doc.querySelectorAll('.Comment:not(.child)'); 
+        const sliced = Array.from(targets).slice(0, maxComments);
+        
+        console.log(`[Reddit Extractor] Found ${targets.length} legacy candidates, processing ${sliced.length}`);
+
+        for (const commentNode of sliced) {
+             const author = commentNode.querySelector('.author, [data-testid="comment_author"]')?.textContent?.trim() || 'User';
+             const body = commentNode.querySelector('.usertext-body, [data-testid="comment_body"]')?.innerText?.trim();
+             if (body) {
+                 let text = `User ${author}: ${body}`;
+                 
+                 // Simple depth check for legacy
+                 if (depthLimit > 0) {
+                     // immediate children are in .child > .sitetable > .thing
+                     const replies = commentNode.querySelectorAll(':scope > .child > .sitetable > .thing.comment');
+                     
+                     for (const reply of replies) {
+                         const rAuthor = reply.querySelector('.author')?.textContent?.trim() || 'User';
+                         const rBody = reply.querySelector('.usertext-body')?.innerText?.trim();
+                         if (rBody) {
+                             text += `\n    > Reply (${rAuthor}): ${rBody.replace(/\n/g, ' ')}`;
+                             // If depthLimit > 1, we could recurse here, but legacy recursion is messy. 
+                             // Keeping it simple: 1 level of reply for legacy unless rewritten recursively.
+                         }
+                     }
+                 }
+                 commentsText.push(text);
+             }
+        }
+    }
+
+    const formattedOutput = `REDDIT THREAD: ${title}
+
+ORIGINAL POST:
+${opBody}
+
+TOP COMMENTS (${commentsText.length} threads extracted, Sort: ${sortType}):
+${commentsText.join('\n\n')}
+`;
+
+    console.log('[Reddit Extractor] Extraction complete, length:', formattedOutput.length);
+    return formattedOutput;
+
+  } catch (e) {
+    console.error('[Reddit Extractor] Error:', e);
+    return `Error extracting Reddit thread: ${e.message}`;
+  }
+}
+
+// Helper for Shreddit recursive extraction
+function extractCommentTree(commentNode, currentDepth, maxDepth) {
+    const author = commentNode.getAttribute('author') || 'User';
+    // Body is often in a slot="comment" or specific div
+    const bodyNode = commentNode.querySelector('[slot="comment"]') || commentNode.querySelector('div[id^="-post-rtjson-content"]');
+    const body = bodyNode?.innerText?.trim();
+    
+    if (!body) return null;
+    
+    let text = `${'    '.repeat(currentDepth)}${currentDepth > 0 ? '> ' : ''}User ${author}: ${body.replace(/\n/g, ' ')}`;
+    
+    if (currentDepth < maxDepth) {
+        // Find direct children comments
+        // Shreddit nests comments in a div slot="children" or directly inside
+        const directChildren = Array.from(commentNode.querySelectorAll(':scope > [slot="children"] > shreddit-comment, :scope > shreddit-comment'));
+        
+        // Limit replies per level to avoid explosion (e.g. top 3 replies)
+        const replies = directChildren.map(child => extractCommentTree(child, currentDepth + 1, maxDepth)).filter(Boolean);
+        
+        if (replies.length > 0) {
+            text += '\n' + replies.join('\n');
+        }
+    }
+    
+    return text;
+}

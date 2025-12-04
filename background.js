@@ -139,6 +139,39 @@ async function handleIconClick(tab) {
         }
       });
     });
+  } else if (tab.url.match(/reddit\.com\/r\/.*\/comments\//)) {
+      console.log('[Background] Detected Reddit thread');
+      chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          files: ['scripts/content-scraper.js']
+      }, () => {
+          chrome.scripting.executeScript({
+              target: { tabId: tab.id },
+              function: () => extractRedditThread()
+          }, (results) => {
+              if (chrome.runtime.lastError) {
+                  console.error('[Background] Reddit script error:', chrome.runtime.lastError.message);
+                  handleApiError(uniqueId, `Failed to extract Reddit thread: ${chrome.runtime.lastError.message}`);
+                  return;
+              }
+              
+              const extractedContent = results?.[0]?.result;
+              if (extractedContent) {
+                  console.log('[Background] Reddit Extraction Result:', extractedContent.substring(0, 500) + '...');
+                  
+                  // DEBUG MODE: Display content directly, skip API
+                  sendMessageSafely(tab.id, { action: 'hideLoading', uniqueId });
+                  sendMessageSafely(tab.id, {
+                      action: 'appendToFloatingWindow',
+                      content: `**[DEBUG MODE - Reddit Extraction]**\n\n${extractedContent}`,
+                      uniqueId
+                  });
+                  // DO NOT CALL makeApiCall(extractedContent, uniqueId);
+              } else {
+                  handleApiError(uniqueId, 'Failed to extract Reddit content. Please ensure you are on a thread page.');
+              }
+          });
+      });
   } else {
     console.log('[Background] Non-YouTube page – injecting getPageContent');
     // Inject the scraper script, then execute the function

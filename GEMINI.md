@@ -46,3 +46,18 @@ To test the extension, you must configure a valid API provider in the Options pa
 *   **Styling:** CSS should be scoped or specific enough to avoid conflicting with host page styles (though Shadow DOM is the ideal long-term solution, current implementation uses a floating div).
 *   **Async/Await:** Extensive use of modern async patterns for API calls and messaging.
 *   **Error Handling:** Robust error handling for API failures and network issues is prioritized (as seen in `background.js`).
+
+## Supported Content Types
+
+The extension provides specialized extraction logic for different content types to ensure optimal summarization:
+
+*   **Regular web pages (extracts visible text):** Uses a generic `document.body.innerText` approach, suitable for most articles and simple web pages.
+*   **YouTube videos (extracts transcripts):** Employs a multi-stage approach to get high-fidelity transcripts, prioritizing YouTube's internal API, falling back to UI scraping, and finally to video title/description if no transcripts are available. Configurable options include:
+    *   **Include Timestamps:** To include timestamps in the transcript.
+    *   **Subtitle Type:** Prioritize Automatic (ASR) or Manual (human-provided) subtitles.
+    *   **Preferred Language:** Specify the language for subtitles.
+*   **Reddit Threads (custom extraction for posts and comments):** Designed to clean noise and provide structured content. Configurable options include:
+    *   **Max Comments:** Specifies the maximum number of top-level comments to extract.
+    *   **Include Reply Depth:** Defines how many levels of replies to include for each extracted comment (0 for top-level only).
+    *   **Sort Comments By:** Allows selecting the comment sort order (Current, Best, Top, New). If not "Current", the extension fetches the sorted page content in the background.
+    *   **Debug Mode:** Currently, for Reddit URLs, the extracted content is displayed directly in the floating window for validation, bypassing the AI model. This allows review of the cleaned output before it's sent for summarization.
