@@ -35,10 +35,15 @@ Implemented > bug hunt
 Implemented > bug hunt
 
 # API Endpoints
-Modify to dropdown with known API endpoints
-Model remains an open text box for easy updates to newer models
-Include a custom to allow custom API endpoints
-Re-add /chat/completions in the backend code?
+~~Modify to dropdown with known API endpoints~~
+~~Model remains an open text box for easy updates to newer models~~
+~~Include a custom to allow custom API endpoints~~
+~~Re-add /chat/completions in the backend code?~~ = wont implement
+Implemented > bug hunt
+    ## Todo: 
+    validate dropdown endpoints
+    verify claude endpoint - told is not compatible with openai standard
+    rename for clarity (openai, custom, etc)
 
 # Limits
 Validate truncation - is it necessary with modern llm?

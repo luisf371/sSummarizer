@@ -20,7 +20,7 @@ let isChatProcessing = new Map();
   MAX_FONT_SIZE: 24,
   DEFAULT_WIDTH: 350,
   DEFAULT_HEIGHT: 450,
-  MIN_WIDTH: 250,
+  MIN_WIDTH: 280,
   MIN_HEIGHT: 200,
   POSITION_OFFSET: 20 // Offset for multiple windows
 };
@@ -733,39 +733,53 @@ function hideLoading(uniqueId) {
 
 function makeDraggable(el, handle) {
     let x0 = 0, y0 = 0, x1 = 0, y1 = 0;
-    handle.onmousedown = e => {
+    handle.onpointerdown = e => { // Changed from onmousedown
         e.preventDefault();
+        e.target.setPointerCapture(e.pointerId); // Capture pointer events
         x1 = e.clientX; y1 = e.clientY;
-        document.onmousemove = drag;
-        document.onmouseup = () => {
-            document.onmousemove = null;
-            document.onmouseup = null;
+        
+        const drag = (e) => { // Defined drag function inside pointerdown for proper scope
+            e.preventDefault();
+            x0 = x1 - e.clientX; y0 = y1 - e.clientY;
+            x1 = e.clientX; y1 = e.clientY;
+            el.style.top = (el.offsetTop - y0) + 'px';
+            el.style.left = (el.offsetLeft - x0) + 'px';
+        };
+
+        const stopDrag = (e) => { // Defined stopDrag function
+            e.target.releasePointerCapture(e.pointerId); // Release pointer capture
+            window.removeEventListener('pointermove', drag);
+            window.removeEventListener('pointerup', stopDrag);
             chrome.storage.local.set({ windowState: { top: el.offsetTop, left: el.offsetLeft, width: el.offsetWidth, height: el.offsetHeight } });
         };
+
+        window.addEventListener('pointermove', drag);
+        window.addEventListener('pointerup', stopDrag, { once: true });
     };
-    function drag(e) {
-        e.preventDefault();
-        x0 = x1 - e.clientX; y0 = y1 - e.clientY;
-        x1 = e.clientX; y1 = e.clientY;
-        el.style.top = (el.offsetTop - y0) + 'px';
-        el.style.left = (el.offsetLeft - x0) + 'px';
-    }
 }
 
 function makeResizable(el, handle) {
-    handle.onmousedown = () => {
-        window.addEventListener('mousemove', resize);
-        window.addEventListener('mouseup', () => {
-            window.removeEventListener('mousemove', resize);
+    handle.onpointerdown = (e) => { // Changed from onmousedown
+        e.preventDefault();
+        e.target.setPointerCapture(e.pointerId); // Capture pointer events
+
+        const resize = (e) => { // Defined resize function inside pointerdown
+            const newWidth = Math.max(UI_CONFIG.MIN_WIDTH, e.clientX - el.offsetLeft);
+            const newHeight = Math.max(UI_CONFIG.MIN_HEIGHT, e.clientY - el.offsetTop);
+            el.style.width = newWidth + 'px';
+            el.style.height = newHeight + 'px';
+        };
+        
+        const stopResize = (e) => { // Defined stopResize function
+            e.target.releasePointerCapture(e.pointerId); // Release pointer capture
+            window.removeEventListener('pointermove', resize);
+            window.removeEventListener('pointerup', stopResize);
             chrome.storage.local.set({ windowState: { top: el.offsetTop, left: el.offsetLeft, width: el.offsetWidth, height: el.offsetHeight } });
-        }, { once: true });
+        };
+
+        window.addEventListener('pointermove', resize);
+        window.addEventListener('pointerup', stopResize, { once: true });
     };
-    function resize(e) {
-        const newWidth = Math.max(UI_CONFIG.MIN_WIDTH, e.clientX - el.offsetLeft);
-        const newHeight = Math.max(UI_CONFIG.MIN_HEIGHT, e.clientY - el.offsetTop);
-        el.style.width = newWidth + 'px';
-        el.style.height = newHeight + 'px';
-    }
 }
 
 // ———— Chat Functionality ————
