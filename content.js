@@ -118,7 +118,7 @@ async function createFloatingWindow(uniqueId) {
         </div>
         
         <div id="chat-area-${uniqueId}" style="padding: 10px; border-top: 1px solid #333; background: #252525; display: flex; gap: 8px; align-items: center; border-radius: 0 0 8px 8px;">
-           <input type="text" id="chat-input-${uniqueId}" placeholder="Ask a follow-up..." disabled style="flex-grow: 1; background: #1e1e1e; border: 1px solid #444; color: #fff; padding: 8px 12px; border-radius: 4px; outline: none; font-family: inherit; font-size: 13px; transition: border-color 0.2s;">
+           <input type="text" id="chat-input-${uniqueId}" placeholder="Thinking..." disabled style="flex-grow: 1; background: #1e1e1e; border: 1px solid #444; color: #fff; padding: 8px 12px; border-radius: 4px; outline: none; font-family: inherit; font-size: 13px; transition: border-color 0.2s;">
            <button id="chat-send-${uniqueId}" disabled style="background: #4a9eff; border: none; color: white; border-radius: 4px; width: 32px; height: 32px; padding: 0; display: flex; align-items: center; justify-content: center; flex-shrink: 0; cursor: pointer; font-size: 13px; transition: opacity 0.2s; opacity: 0.6;">➤</button>
         </div>
 
