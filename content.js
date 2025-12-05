@@ -3,7 +3,7 @@
 console.log('[Content] Content script loaded');
 
 // State management for multiple floating windows
-let floatingWindows = new Map();
+let floatingWindows = new Map(); // Stores ShadowRoot
 let isMinimized = new Map();
 let textSizes = new Map();
 let windowPositions = new Map();
@@ -60,8 +60,8 @@ async function createFloatingWindow(uniqueId) {
   try {
     if (floatingWindows.has(uniqueId)) {
       const existingWindow = floatingWindows.get(uniqueId);
-      if (existingWindow && existingWindow.parentNode) {
-        existingWindow.remove();
+      if (existingWindow && existingWindow.host && existingWindow.host.parentNode) {
+        existingWindow.host.remove();
       }
       cleanupWindowState(uniqueId);
     }
@@ -83,13 +83,22 @@ async function createFloatingWindow(uniqueId) {
         position.right = 20;
     }
 
-    const floatingWindow = document.createElement('div');
-    // Wrapper needs to be unobtrusive
-    floatingWindow.style.all = 'initial'; 
+    // Create Host Element
+    const host = document.createElement('div');
+    host.id = `sSummarizer-host-${uniqueId}`;
+    host.style.all = 'initial';
+    host.style.zIndex = '2147483647'; // Max safe integer to ensure it's on top
+    // Position host to ensure it doesn't affect layout, though children are fixed.
+    // We don't set position: fixed on host to avoid creating a new stacking context 
+    // that might interfere with child's fixed positioning relative to viewport,
+    // unless strictly necessary. But 'all: initial' resets position to static.
     
+    // Attach Shadow DOM
+    const shadow = host.attachShadow({ mode: 'open' });
+
     const positionStyle = position.left !== null ? `top: ${position.top}px; left: ${position.left}px;` : `top: ${position.top}px; right: ${position.right}px;`;
 
-    floatingWindow.innerHTML = `
+    shadow.innerHTML = `
       <div id="floating-window-${uniqueId}" style="position: fixed; ${positionStyle} z-index: 9999; background-color: #1e1e1e; color: #cfcfcf; border: 1px solid #333; border-radius: 8px; width: ${size.width}px; height: ${size.height}px; display: flex; flex-direction: column; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; backdrop-filter: blur(10px); box-sizing: border-box;">
         <div id="title-bar-${uniqueId}" style="padding: 12px 16px; background: linear-gradient(135deg, #2e2e2e, #3a3a3a); cursor: move; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #444; border-radius: 8px 8px 0 0; user-select: none;">
           <span style="font-weight: 600; color: #f0f0f0; font-size: 14px;">AI Summarizer</span>
@@ -240,17 +249,17 @@ async function createFloatingWindow(uniqueId) {
       </style>
     `;
     
-    document.body.appendChild(floatingWindow);
+    document.body.appendChild(host);
     
-    // Initialize state
-    floatingWindows.set(uniqueId, floatingWindow);
+    // Initialize state - Store ShadowRoot
+    floatingWindows.set(uniqueId, shadow);
     isMinimized.set(uniqueId, false);
     textSizes.set(uniqueId, initialFontSize);
     windowPositions.set(uniqueId, position);
     userScrolledUp.set(uniqueId, false);
     isChatProcessing.set(uniqueId, false);
 
-    const win = floatingWindow.querySelector(`#floating-window-${uniqueId}`);
+    const win = shadow.querySelector(`#floating-window-${uniqueId}`);
     const contentEl = win.querySelector(`#content-${uniqueId}`);
 
     // Add scroll event listener to track user scrolling
@@ -308,7 +317,7 @@ function validateWindowState(state) {
     validatedState.top < 0 ||
     validatedState.left < 0 ||
     validatedState.top > viewportHeight - 50 || // 50px buffer for title bar
-    validatedState.left > viewportWidth - 50;  // 50px buffer for visibility
+    validatedState.left > viewportWidth - 50;
 
   if (isOutOfBounds) {
     console.warn('[Content] Window position is out of bounds. Resetting to default.');
@@ -385,9 +394,10 @@ function closeWindow(uniqueId) {
       }
     });
     
-    const win = floatingWindows.get(uniqueId);
-    if (win && win.parentNode) {
-      win.remove();
+    const win = floatingWindows.get(uniqueId); // ShadowRoot
+    // win is ShadowRoot, access host to remove
+    if (win && win.host) {
+      win.host.remove();
     }
     cleanupWindowState(uniqueId);
     console.log(`[Content] Closed window ${uniqueId}`);
@@ -414,7 +424,7 @@ function cleanupWindowState(uniqueId) {
  */
 function changeFontSize(uniqueId, delta) {
   try {
-    const win = floatingWindows.get(uniqueId);
+    const win = floatingWindows.get(uniqueId); // ShadowRoot
     if (!win) {
       console.log(`[Content] Window ${uniqueId} already closed, skipping font size change`);
       return;
@@ -448,7 +458,7 @@ function changeFontSize(uniqueId, delta) {
  */
 function toggleMinimize(uniqueId) {
   try {
-    const wrapper = floatingWindows.get(uniqueId);
+    const wrapper = floatingWindows.get(uniqueId); // ShadowRoot
     if (!wrapper) {
       console.log(`[Content] Window ${uniqueId} already closed, skipping minimize toggle`);
       return;
@@ -498,7 +508,7 @@ function toggleMinimize(uniqueId) {
  */
 function handleMessage(content, uniqueId) {
   try {
-    const win = floatingWindows.get(uniqueId);
+    const win = floatingWindows.get(uniqueId); // ShadowRoot
     if (!win) {
       // This is expected when window is already closed - no need to warn
       console.log(`[Content] Window ${uniqueId} already closed, skipping message`);
@@ -552,7 +562,7 @@ function sanitizeContent(content) {
   
   // Allow basic formatting tags but escape potentially dangerous content
   const allowedTags = ['b', 'i', 'em', 'strong', 'br', 'p', 'div', 'span', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol', 'li', 'code', 'pre', 'blockquote', 'hr'];
-  const tagRegex = /<(\/?)([\w]+)([^>]*)>/gi;
+  const tagRegex = /<(\/?)(\w+)([^>]*)>/gi;
   
   return html.replace(tagRegex, (match, slash, tagName, attributes) => {
     if (allowedTags.includes(tagName.toLowerCase())) {
@@ -572,7 +582,7 @@ function getIndent(line) {
 function convertMarkdownToHtml(markdown) {
     const processInline = (text) => {
         return text.trim()
-            .replace(/\*\*\*(.*?)\*\*\*/g, '<strong><em>$1</em></strong>')
+            .replace(/\*\*(.*?)\*\*/g, '<strong><em>$1</em></strong>')
             .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
             .replace(/\*(.*?)\*/g, '<em>$1</em>')
             .replace(/`([^`]+)`/g, '<code>$1</code>');
@@ -685,7 +695,7 @@ function escapeHtml(text) {
  */
 function showLoading(uniqueId) {
   try {
-    const win = floatingWindows.get(uniqueId);
+    const win = floatingWindows.get(uniqueId); // ShadowRoot
     if (!win) {
       console.log(`[Content] Window ${uniqueId} already closed, skipping loading display`);
       return;
@@ -705,7 +715,7 @@ function showLoading(uniqueId) {
  */
 function hideLoading(uniqueId) {
   try {
-    const win = floatingWindows.get(uniqueId);
+    const win = floatingWindows.get(uniqueId); // ShadowRoot
     if (!win) {
       // This is expected when window is already closed - no need to warn
       console.log(`[Content] Window ${uniqueId} already closed, skipping loading hide`);
@@ -778,7 +788,7 @@ function handleStreamEnd(request) {
   history.push({ role: 'assistant', content: fullResponse });
   
   // Enable chat input
-  const win = floatingWindows.get(uniqueId);
+  const win = floatingWindows.get(uniqueId); // ShadowRoot
   if (win) {
     const input = win.querySelector(`#chat-input-${uniqueId}`);
     const btn = win.querySelector(`#chat-send-${uniqueId}`);
@@ -793,6 +803,7 @@ function handleStreamEnd(request) {
 }
 
 function setupChatListeners(uniqueId, win) {
+    // win is Element (#floating-window-id) passed from createFloatingWindow
     const input = win.querySelector(`#chat-input-${uniqueId}`);
     const sendBtn = win.querySelector(`#chat-send-${uniqueId}`);
     
@@ -805,12 +816,18 @@ function setupChatListeners(uniqueId, win) {
     };
 
     if (input) {
+        // Stop keydown propagation to prevent site hotkeys (like YouTube spacebar)
         input.addEventListener('keydown', (e) => {
+            e.stopPropagation();
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
                 submit();
             }
         });
+        
+        // Also stop keyup/keypress to be safe
+        input.addEventListener('keyup', (e) => e.stopPropagation());
+        input.addEventListener('keypress', (e) => e.stopPropagation());
     }
     
     if (sendBtn) {
@@ -822,7 +839,7 @@ function sendFollowUp(uniqueId, question) {
     isChatProcessing.set(uniqueId, true);
     
     // Disable input
-    const win = floatingWindows.get(uniqueId);
+    const win = floatingWindows.get(uniqueId); // ShadowRoot
     if (win) {
         const input = win.querySelector(`#chat-input-${uniqueId}`);
         const btn = win.querySelector(`#chat-send-${uniqueId}`);
