@@ -263,6 +263,8 @@ async function parseYouTubeCaptionXML(xmlText) {
           .replace(/&quot;/g, '"')
           .replace(/&#39;/g, "'")
           .replace(/&nbsp;/g, ' ')
+          // Remove control characters that might break some JSON parsers or confuse LLMs
+          .replace(/[\u0000-\u0008\u000B-\u001F\u007F-\u009F]/g, "")
           .trim();
         
         if (cleanText) {

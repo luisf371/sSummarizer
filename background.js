@@ -22,7 +22,7 @@ let responseAccumulators = new Map();
 
 // Configuration constants
 const CONFIG = {
-  MAX_TEXT_LENGTH: 100000, // Maximum text length to send to API
+  MAX_TEXT_LENGTH: 10000000, // Effectively unlimited (10MB)
   REQUEST_TIMEOUT: 30000, // 30 seconds timeout for API requests
   RETRY_ATTEMPTS: 3,
   YOUTUBE_TRANSCRIPT_TIMEOUT: 10000
@@ -410,9 +410,9 @@ async function makeApiCall(inputData, uniqueId) {
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('[API] Error response:', errorText);
+      console.error('[API] Error response body:', errorText);
       abortControllers.delete(uniqueId);
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      throw new Error(`HTTP ${response.status}: ${response.statusText} - ${errorText.substring(0, 200)}`);
     }
 
     console.log('[API] response.status=', response.status);
@@ -426,6 +426,8 @@ async function makeApiCall(inputData, uniqueId) {
     
     if (enableStreaming && response.body) {
       console.log('[API] Processing stream...');
+      // Log the start of the stream processing
+      console.log('[API] Stream headers:', Object.fromEntries(response.headers.entries()));
       const reader = response.body.getReader();
       const decoder = new TextDecoder('utf-8');
       let buffer = '';
