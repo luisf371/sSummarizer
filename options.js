@@ -3,6 +3,7 @@ document.addEventListener('DOMContentLoaded', function() {
   const optionsForm = document.getElementById('options-form');
   const apiKeyInput = document.getElementById('api-key');
   const apiUrlInput = document.getElementById('api-url');
+  const apiProviderSelect = document.getElementById('api-provider');
   const modelInput = document.getElementById('model');
   const systemPromptInput = document.getElementById('system-prompt');
   const enableStreamingInput = document.getElementById('enable-streaming');
@@ -20,6 +21,65 @@ document.addEventListener('DOMContentLoaded', function() {
   const timestampPromptInput = document.getElementById('timestamp-prompt');
   const defaultTimestampPromptBtn = document.getElementById('default-timestamp-prompt-btn');
   const timestampPromptContainer = document.getElementById('timestamp-prompt-container');
+
+  const PROVIDER_PRESETS = {
+    openai: {
+      label: 'OpenAI',
+      url: 'https://api.openai.com/v1/chat/completions',
+      placeholder: 'https://api.openai.com/v1/chat',
+      enforceSuffix: '/completions',
+      modelHint: 'gpt-4o-mini'
+    },
+    azure: {
+      label: 'Azure OpenAI',
+      url: 'https://{resource}.openai.azure.com/openai/deployments/{deployment}/chat/completions?api-version=2024-02-15-preview',
+      placeholder: 'https://your-resource.openai.azure.com/...',
+      enforceSuffix: '',
+      modelHint: '{deployment-name}'
+    },
+    groq: {
+      label: 'Groq',
+      url: 'https://api.groq.com/openai/v1/chat/completions',
+      placeholder: 'https://api.groq.com/openai/v1/chat',
+      enforceSuffix: '/completions',
+      modelHint: 'mixtral-8x7b-32768'
+    },
+    perplexity: {
+      label: 'Perplexity',
+      url: 'https://api.perplexity.ai/chat/completions',
+      placeholder: 'https://api.perplexity.ai/chat',
+      enforceSuffix: '/completions',
+      modelHint: 'llama-3.1-sonar-small-128k-chat'
+    },
+    anthropic: {
+      label: 'Anthropic Claude',
+      url: 'https://api.anthropic.com/v1/messages',
+      placeholder: 'https://api.anthropic.com/v1/messages',
+      enforceSuffix: '',
+      modelHint: 'claude-3-5-sonnet-20240620'
+    },
+    gemini: {
+      label: 'Google Gemini',
+      url: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent',
+      placeholder: 'https://generativelanguage.googleapis.com/...',
+      enforceSuffix: '',
+      modelHint: 'gemini-1.5-pro'
+    },
+    custom: {
+      label: 'Custom / Other',
+      url: '',
+      placeholder: 'https://your-endpoint.example.com/v1/chat',
+      enforceSuffix: '/completions',
+      modelHint: 'gpt-4o-mini'
+    },
+    openrouter: {
+      label: 'OpenRouter',
+      url: 'https://openrouter.ai/api/v1/chat/completions',
+      placeholder: 'https://openrouter.ai/api/v1/chat',
+      enforceSuffix: '/completions',
+      modelHint: 'openrouter/auto'
+    }
+  };
 
   const statusDiv = document.createElement('div');
   statusDiv.id = 'status-message';
@@ -74,9 +134,11 @@ If and ONLY if timestamps are provided;
   }
 
   function getFormValues() {
+    enforceProviderSuffix();
     return {
       apiKey: apiKeyInput.value.trim(),
       apiUrl: apiUrlInput.value.trim(),
+      apiProvider: (apiProviderSelect?.value || 'custom'),
       model: modelInput.value.trim(),
       systemPrompt: systemPromptInput.value.trim(),
       timestampPrompt: timestampPromptInput.value.trim(),
@@ -94,13 +156,16 @@ If and ONLY if timestamps are provided;
 
   function loadSavedOptions() {
     try {
-      chrome.storage.sync.get(['apiKey', 'apiUrl', 'model', 'systemPrompt', 'timestampPrompt', 'enableStreaming', 'includeTimestamps', 'defaultFontSize', 'subtitlePriority', 'preferredLanguage', 'redditMaxComments', 'redditDepth', 'redditSort', 'enableDebugMode'], function(result) {
+      chrome.storage.sync.get(['apiKey', 'apiUrl', 'apiProvider', 'model', 'systemPrompt', 'timestampPrompt', 'enableStreaming', 'includeTimestamps', 'defaultFontSize', 'subtitlePriority', 'preferredLanguage', 'redditMaxComments', 'redditDepth', 'redditSort', 'enableDebugMode'], function(result) {
         if (chrome.runtime.lastError) {
           showStatus('Error loading saved settings: ' + chrome.runtime.lastError.message, 'error');
           return;
         }
 
         apiKeyInput.value = result.apiKey || '';
+        if (apiProviderSelect) {
+          apiProviderSelect.value = result.apiProvider || 'openai';
+        }
         apiUrlInput.value = result.apiUrl || '';
         modelInput.value = result.model || '';
         systemPromptInput.value = result.systemPrompt || '';
@@ -116,7 +181,7 @@ If and ONLY if timestamps are provided;
         if (redditDepthInput) redditDepthInput.value = result.redditDepth !== undefined ? result.redditDepth : 1;
         if (redditSortInput) redditSortInput.value = result.redditSort || 'current';
         if (enableDebugModeInput) enableDebugModeInput.checked = result.enableDebugMode || false;
-        
+        applyProviderPreset({ shouldResetUrl: !result.apiUrl });
         systemPromptInput.dispatchEvent(new Event('input', { bubbles: true }));
         toggleTimestampPromptVisibility();
         console.log('[Options] Loaded saved settings', result);
@@ -128,6 +193,8 @@ If and ONLY if timestamps are provided;
   }
 
     function setupFormListeners() {
+
+      setupProviderSelector();
 
       setupPasswordToggle();
 
@@ -154,10 +221,55 @@ If and ONLY if timestamps are provided;
   
 
     function toggleTimestampPromptVisibility() {
-      if (!timestampPromptContainer || !includeTimestampsInput || !timestampPromptInput) return;
-      const isEnabled = includeTimestampsInput.checked;
-      timestampPromptContainer.classList.toggle('is-disabled', !isEnabled);
-      timestampPromptInput.disabled = !isEnabled;
+        if (!timestampPromptContainer || !includeTimestampsInput || !timestampPromptInput) return;
+        const isEnabled = includeTimestampsInput.checked;
+        timestampPromptContainer.classList.toggle('is-disabled', !isEnabled);
+        timestampPromptInput.disabled = !isEnabled;
+      }
+
+    function setupProviderSelector() {
+      if (!apiProviderSelect || !apiUrlInput) return;
+      applyProviderPreset({ shouldResetUrl: !apiUrlInput.value });
+      apiProviderSelect.addEventListener('change', () => {
+        applyProviderPreset({ shouldResetUrl: true });
+      });
+      apiUrlInput.addEventListener('blur', enforceProviderSuffix);
+    }
+
+    function applyProviderPreset({ shouldResetUrl = false } = {}) {
+      if (!apiUrlInput) return;
+      const key = apiProviderSelect?.value || 'custom';
+      const config = PROVIDER_PRESETS[key] || PROVIDER_PRESETS.custom;
+      apiUrlInput.placeholder = config.placeholder || 'https://api.example.com/v1/chat';
+      apiUrlInput.dataset.enforceSuffix = config.enforceSuffix || '';
+      apiUrlInput.disabled = key !== 'custom';
+      if (shouldResetUrl || !apiUrlInput.value.trim()) {
+        apiUrlInput.value = config.url || '';
+      }
+      if (config.modelHint && modelInput && !modelInput.value) {
+        modelInput.placeholder = config.modelHint;
+      }
+      enforceProviderSuffix();
+    }
+
+    function enforceProviderSuffix() {
+      if (!apiUrlInput) return;
+      const suffix = apiUrlInput.dataset?.enforceSuffix;
+      if (!suffix) return;
+      const trimmed = apiUrlInput.value.trim();
+      if (!trimmed || /[?#]/.test(trimmed)) {
+        return;
+      }
+      if (trimmed.endsWith(suffix)) {
+        return;
+      }
+      const normalized = trimmed.replace(/\/+$/, '');
+      if (!normalized) return;
+      if (normalized.endsWith(suffix)) {
+        apiUrlInput.value = normalized;
+        return;
+      }
+      apiUrlInput.value = `${normalized}${suffix}`;
     }
 
    
