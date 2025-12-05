@@ -24,183 +24,230 @@
 
     <main>
       <form id="options-form" class="settings-form">
-        <div class="form-section">
-          <h2>API Configuration</h2>
-          
-          <div class="form-group">
-            <label for="api-url" class="required">OpenAI-Compatible API URL</label>
-            <input 
-              type="url" 
-              id="api-url" 
-              name="api-url" 
-              placeholder="https://api.openai.com/v1/chat/completions"
-              required
-              autocomplete="off"
-            >
-            <small class="help-text">Enter OpenAI-Compatible API URL (Example: https://api.openai.com/v1/chat/completions)</small>
-          </div>
-
-          <div class="form-group">
-            <label for="api-key" class="required">API Key</label>
-            <div class="password-input-wrapper">
-              <input 
-                type="password" 
-                id="api-key" 
-                name="api-key" 
-                placeholder="sk-..."
-                required
-                autocomplete="new-password"
-              >
-              <button type="button" id="toggle-password" class="toggle-password" title="Show/Hide API Key">
-                Show
-              </button>
+        <section class="form-section">
+          <div class="section-header">
+            <span class="section-tag">Step 1</span>
+            <div>
+              <h2>Connect to your AI provider</h2>
+              <p class="section-description">Provide the endpoint, model, and credentials needed for the extension to talk to your API.</p>
             </div>
-            <small class="help-text">Your API key will be stored securely in your browser</small>
           </div>
-
-          <div class="form-group">
-            <label for="model" class="required">Model Name</label>
-            <input 
-              type="text" 
-              id="model" 
-              name="model" 
-              placeholder="gpt-4o-mini"
-              required
-              autocomplete="off"
-            >
-            <small class="help-text">Specify the model to use (Example: gpt-4o-mini). This field is required.</small>
+          <div class="section-grid">
+            <article class="settings-card">
+              <h3>Endpoint & Model</h3>
+              <div class="form-group">
+                <label for="api-url" class="required">OpenAI-Compatible API URL</label>
+                <input 
+                  type="url" 
+                  id="api-url" 
+                  name="api-url" 
+                  placeholder="https://api.openai.com/v1/chat/completions"
+                  required
+                  autocomplete="off"
+                >
+                <small class="help-text">Enter the full REST endpoint for chat completions (Example: https://api.openai.com/v1/chat/completions).</small>
+              </div>
+              <div class="form-group">
+                <label for="model" class="required">Model Name</label>
+                <input 
+                  type="text" 
+                  id="model" 
+                  name="model" 
+                  placeholder="gpt-4o-mini"
+                  required
+                  autocomplete="off"
+                >
+                <small class="help-text">Pick the exact model identifier that should process summaries (e.g., gpt-4o-mini, claude-3.5-sonnet).</small>
+              </div>
+            </article>
+            <article class="settings-card">
+              <h3>Authentication</h3>
+              <div class="form-group">
+                <label for="api-key" class="required">API Key</label>
+                <div class="password-input-wrapper">
+                  <input 
+                    type="password" 
+                    id="api-key" 
+                    name="api-key" 
+                    placeholder="sk-..."
+                    required
+                    autocomplete="new-password"
+                  >
+                  <button type="button" id="toggle-password" class="toggle-password" title="Show/Hide API Key">
+                    Show
+                  </button>
+                </div>
+                <small class="help-text">Your API key stays in browser storage and is used only to authenticate with the endpoint above.</small>
+              </div>
+            </article>
           </div>
-        </div>
+        </section>
 
-        <div class="form-section">
-          <h2>Feature Settings</h2>
-
-          <div class="form-group form-group-toggle">
-            <label for="enable-streaming">Enable Streaming</label>
-            <div class="toggle-switch">
-              <input type="checkbox" id="enable-streaming" name="enable-streaming">
-              <label class="slider" for="enable-streaming"></label>
+        <section class="form-section">
+          <div class="section-header">
+            <span class="section-tag">Step 2</span>
+            <div>
+              <h2>Guide the summaries</h2>
+              <p class="section-description">Shape how the AI writes and how the summary appears inside the overlay.</p>
             </div>
-            <small class="help-text">Receive responses in real-time as generated. May not be supported by all API/Model providers.</small>
           </div>
+          <div class="section-grid">
+            <article class="settings-card full-span">
+              <div class="label-group">
+                <label for="system-prompt">System Prompt</label>
+                <button type="button" id="default-prompt-btn" class="text-button">Use Default</button>
+              </div>
+              <textarea 
+                id="system-prompt" 
+                name="system-prompt" 
+                rows="6" 
+                placeholder="You are a helpful assistant that summarizes content clearly and concisely. Focus on the main points and key takeaways."
+              ></textarea>
+              <small class="help-text">
+                Customize how the AI should summarize content. Leave blank for the built-in instructions.
+                <br>
+                <strong>Byte limit:</strong> <span id="prompt-counter">0</span>/8000
+              </small>
+            </article>
 
-          <div class="form-group form-group-toggle">
-            <label for="include-timestamps">Include Timestamps (YouTube)</label>
-            <div class="toggle-switch">
-              <input type="checkbox" id="include-timestamps" name="include-timestamps">
-              <label class="slider" for="include-timestamps"></label>
+            <article class="settings-card">
+              <h3>Streaming</h3>
+              <div class="form-group form-group-toggle">
+                <label for="enable-streaming">Enable Streaming</label>
+                <div class="toggle-switch">
+                  <input type="checkbox" id="enable-streaming" name="enable-streaming">
+                  <label class="slider" for="enable-streaming"></label>
+                </div>
+              </div>
+              <small class="help-text">Receive responses in real-time as they are generated. Not all providers or models support streaming.</small>
+            </article>
+
+            <article class="settings-card">
+              <h3>Reading comfort</h3>
+              <div class="form-group">
+                <label for="default-font-size">Default Font Size (px)</label>
+                <input type="number" id="default-font-size" name="default-font-size" min="8" max="24" placeholder="14">
+                <small class="help-text">Set the initial font size for the floating summary window (allowed range: 8-24px).</small>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section class="form-section">
+          <div class="section-header">
+            <span class="section-tag">Step 3</span>
+            <div>
+              <h2>Platform preferences</h2>
+              <p class="section-description">Tell the extension what to collect from YouTube and Reddit before it calls the AI.</p>
             </div>
-            <small class="help-text">Note: Including timestamps increases the tokens sent to the API endpoint and may result in higher API costs.</small>
           </div>
-        </div>
+          <div class="section-grid single-column">
+            <article class="settings-card platform-card full-span">
+              <div class="platform-badge">YouTube</div>
+              <p class="card-description">Control transcripts, timestamps, and language hints while summarizing videos.</p>
+              
+              <div class="form-group form-group-toggle">
+                <div class="toggle-header">
+                  <label for="include-timestamps">Include Timestamps</label>
+                  <small class="help-text inline-help">Adds HH:MM:SS markers to the prompt. Each timestamp increases tokens and may raise API cost.</small>
+                </div>
+                <div class="toggle-switch">
+                  <input type="checkbox" id="include-timestamps" name="include-timestamps">
+                  <label class="slider" for="include-timestamps"></label>
+                </div>
+              </div>
 
-        <div class="form-section">
-          <h2>Subtitle Settings</h2>
+              <div class="form-group is-disabled" id="timestamp-prompt-container">
+                <div class="label-group">
+                  <label for="timestamp-prompt">Timestamp Instructions</label>
+                  <button type="button" id="default-timestamp-prompt-btn" class="text-button">Use Default</button>
+                </div>
+                <textarea 
+                  id="timestamp-prompt" 
+                  name="timestamp-prompt" 
+                  rows="5" 
+                  placeholder="Instructions for handling timestamps..."
+                  disabled
+                ></textarea>
+                <small class="help-text">
+                  These instructions are appended to the system prompt <strong>only when timestamps are enabled</strong>.
+                </small>
+              </div>
 
-          <div class="form-group">
-            <label for="subtitle-priority">Subtitle Type</label>
-            <select id="subtitle-priority" name="subtitle-priority">
-              <option value="auto" selected>Automatic (ASR)</option>
-              <option value="manual">Manual (human-provided)</option>
-            </select>
-            <small class="help-text">Choose to prioritize Automatic Speech Recognition *recommend* or manual subtitles. Automatic fall back if not available.</small>
+              <div class="form-group">
+                <label for="subtitle-priority">Subtitle Type</label>
+                <select id="subtitle-priority" name="subtitle-priority">
+                  <option value="auto" selected>Automatic (ASR)</option>
+                  <option value="manual">Manual (human-provided)</option>
+                </select>
+                <small class="help-text">Choose whether to prefer automatic transcripts or human captions. Automatic falls back when unavailable.</small>
+              </div>
+
+              <div class="form-group">
+                <label for="preferred-language">Preferred Language</label>
+                <input
+                  type="text"
+                  id="preferred-language"
+                  name="preferred-language"
+                  placeholder="en"
+                  autocomplete="off"
+                >
+                <small class="help-text">Provide a single language code (e.g., en, es, fr). Defaults to English if left blank.</small>
+              </div>
+            </article>
+
+            <article class="settings-card platform-card full-span">
+              <div class="platform-badge">Reddit</div>
+              <p class="card-description">Choose how many threads to read and how they are sorted before summarizing.</p>
+              <div class="form-group">
+                <label for="reddit-max-comments">Max Comments</label>
+                <input type="number" id="reddit-max-comments" name="reddit-max-comments" min="1" max="100" placeholder="20">
+                <small class="help-text">Maximum number of top-level threads to include (1-100).</small>
+              </div>
+
+              <div class="form-group">
+                <label for="reddit-depth">Include Reply Depth</label>
+                <input type="number" id="reddit-depth" name="reddit-depth" min="0" max="10" placeholder="1">
+                <small class="help-text">Pick how deep the scraper should traverse replies (0 = top level only).</small>
+              </div>
+
+              <div class="form-group">
+                <label for="reddit-sort">Sort Comments By</label>
+                <select id="reddit-sort" name="reddit-sort">
+                  <option value="current" selected>Current (Visible Page)</option>
+                  <option value="best">Best</option>
+                  <option value="top">Top</option>
+                  <option value="new">New</option>
+                </select>
+                <small class="help-text">Current keeps whatever is visible on-page. Other modes fetch sorted threads silently.</small>
+              </div>
+            </article>
           </div>
+        </section>
 
-          <div class="form-group">
-            <label for="preferred-language">Preferred Language</label>
-            <input
-              type="text"
-              id="preferred-language"
-              name="preferred-language"
-              placeholder="en"
-              autocomplete="off"
-            >
-            <small class="help-text">Enter a language code (e.g., en, es, fr). Only one language code at a time. Defaults to English (en).</small>
-          </div>
-        </div>
-
-        <div class="form-section">
-          <h2>Reddit Settings</h2>
-          
-          <div class="form-group">
-            <label for="reddit-max-comments">Max Comments</label>
-            <input type="number" id="reddit-max-comments" name="reddit-max-comments" min="1" max="100" placeholder="20">
-            <small class="help-text">Maximum number of top-level threads to include (1-100).</small>
-          </div>
-
-          <div class="form-group">
-            <label for="reddit-depth">Include Reply Depth</label>
-            <input type="number" id="reddit-depth" name="reddit-depth" min="0" max="10" placeholder="1">
-            <small class="help-text">How deep to go into comment replies (0 = top level only).</small>
-          </div>
-
-          <div class="form-group">
-            <label for="reddit-sort">Sort Comments By</label>
-            <select id="reddit-sort" name="reddit-sort">
-              <option value="current" selected>Current (Visible Page)</option>
-              <option value="best">Best</option>
-              <option value="top">Top</option>
-              <option value="new">New</option>
-            </select>
-            <small class="help-text">Choose which comments to summarize. 'Current' uses the page as-is. Others fetch sorted content in the background.</small>
-          </div>
-        </div>
-
-        <div class="form-section">
-          <h2>Summarization Settings</h2>
-          
-          <div class="form-group">
-            <div class="label-group">
-              <label for="system-prompt">System Prompt</label>
-              <button type="button" id="default-prompt-btn" class="text-button">Use Default</button>
+        <section class="form-section">
+          <div class="section-header">
+            <span class="section-tag">Step 4</span>
+            <div>
+              <h2>Debug & verification</h2>
+              <p class="section-description">Inspect what is being captured before it ever leaves the page.</p>
             </div>
-            <textarea 
-              id="system-prompt" 
-              name="system-prompt" 
-              rows="6" 
-              placeholder="You are a helpful assistant that summarizes content clearly and concisely. Focus on the main points and key takeaways."
-            ></textarea>
-            <small class="help-text">
-              Customize how the AI should summarize content. Leave blank for default behavior.
-              <br>
-              <strong>Byte limit:</strong> <span id="prompt-counter">0</span>/8000
-            </small>
           </div>
-
-          <div class="form-group" id="timestamp-prompt-container">
-            <div class="label-group">
-              <label for="timestamp-prompt">Timestamp Instructions</label>
-              <button type="button" id="default-timestamp-prompt-btn" class="text-button">Use Default</button>
-            </div>
-            <textarea 
-              id="timestamp-prompt" 
-              name="timestamp-prompt" 
-              rows="5" 
-              placeholder="Instructions for handling timestamps..."
-            ></textarea>
-            <small class="help-text">
-              Additional instructions appended to the system prompt <strong>only when timestamps are enabled</strong>.
-            </small>
+          <div class="section-grid">
+            <article class="settings-card highlight-card">
+              <div class="form-group form-group-toggle">
+                <div class="toggle-header">
+                  <label for="enable-debug-mode">Enable Debug Mode</label>
+                  <small class="help-text inline-help">When enabled, the extracted raw content is shown inside the window instead of sending it to the AI. Perfect for troubleshooting selectors.</small>
+                </div>
+                <div class="toggle-switch">
+                  <input type="checkbox" id="enable-debug-mode" name="enable-debug-mode">
+                  <label class="slider" for="enable-debug-mode"></label>
+                </div>
+              </div>
+            </article>
           </div>
-
-          <div class="form-group">
-            <label for="default-font-size">Default Font Size (px)</label>
-            <input type="number" id="default-font-size" name="default-font-size" min="8" max="24" placeholder="14">
-            <small class="help-text">Set the initial font size for the summary window (from 8 to 24).</small>
-          </div>
-        </div>
-
-        <div class="form-section">
-          <h2>Debug Settings</h2>
-          <div class="form-group form-group-toggle">
-            <label for="enable-debug-mode">Enable Debug Mode</label>
-            <div class="toggle-switch">
-              <input type="checkbox" id="enable-debug-mode" name="enable-debug-mode">
-              <label class="slider" for="enable-debug-mode"></label>
-            </div>
-            <small class="help-text">If enabled, extracted content will be displayed in the window instead of being sent to the AI. Useful for verifying what text is being extracted.</small>
-          </div>
-        </div>
+        </section>
       </form>
 
       <div class="info-section">

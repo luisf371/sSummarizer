@@ -154,21 +154,10 @@ If and ONLY if timestamps are provided;
   
 
     function toggleTimestampPromptVisibility() {
-
-      if (timestampPromptContainer && includeTimestampsInput) {
-
-        if (includeTimestampsInput.checked) {
-
-          timestampPromptContainer.style.display = 'block';
-
-        } else {
-
-          timestampPromptContainer.style.display = 'none';
-
-        }
-
-      }
-
+      if (!timestampPromptContainer || !includeTimestampsInput || !timestampPromptInput) return;
+      const isEnabled = includeTimestampsInput.checked;
+      timestampPromptContainer.classList.toggle('is-disabled', !isEnabled);
+      timestampPromptInput.disabled = !isEnabled;
     }
 
    

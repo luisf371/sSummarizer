@@ -1,10 +1,9 @@
 Here are several concrete improvements ranging from easy "low-hanging fruit" to more advanced features that would significantly polish the extension.
 
-  1. Technical: Shadow DOM Isolation (High Priority)
-  Currently, your floating window is injected directly into the page's DOM. While you use all: initial, aggressive CSS from some websites can still bleed in and break your UI (or your CSS might affect the  
-  website).
-   * The Fix: Wrap your entire UI in a Shadow DOM. This creates a completely isolated browser environment for your HTML/CSS. No website styles can get in, and yours can't get out.
-   * Why: Guarantees your extension looks identical on every single website.
+  ~~1. Technical: Shadow DOM Isolation (High Priority)~~
+  ~~Currently, your floating window is injected directly into the page's DOM. While you use all: initial, aggressive CSS from some websites can still bleed in and break your UI (or your CSS might affect the website).~~
+   ~~* The Fix: Wrap your entire UI in a Shadow DOM. This creates a completely isolated browser environment for your HTML/CSS. No website styles can get in, and yours can't get out.~~
+   *~~ Why: Guarantees your extension looks identical on every single website.~~
 
   2. Feature: "Summarize Selection" Context Menu
   Right now, you summarize the whole page. Often users only want to know about one specific paragraph or section.
