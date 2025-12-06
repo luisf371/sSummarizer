@@ -20,8 +20,8 @@ let isChatProcessing = new Map();
   MAX_FONT_SIZE: 24,
   DEFAULT_WIDTH: 350,
   DEFAULT_HEIGHT: 450,
-  MIN_WIDTH: 280,
-  MIN_HEIGHT: 200,
+  MIN_WIDTH: 350,
+  MIN_HEIGHT: 450,
   POSITION_OFFSET: 20 // Offset for multiple windows
 };
 
