@@ -18,10 +18,10 @@ let isChatProcessing = new Map();
   DEFAULT_FONT_SIZE: 14,
   MIN_FONT_SIZE: 8,
   MAX_FONT_SIZE: 24,
-  DEFAULT_WIDTH: 350,
-  DEFAULT_HEIGHT: 450,
-  MIN_WIDTH: 350,
-  MIN_HEIGHT: 450,
+  DEFAULT_WIDTH: 280,
+  DEFAULT_HEIGHT: 250,
+  MIN_WIDTH: 280,
+  MIN_HEIGHT: 250,
   POSITION_OFFSET: 20 // Offset for multiple windows
 };
 
@@ -75,12 +75,23 @@ async function createFloatingWindow(uniqueId) {
     // Validate and correct window position
     state = validateWindowState(state);
 
-    const position = { top: state.top, left: state.left };
+    let position;
     const size = { width: state.width, height: state.height };
 
-    // If right is not saved, calculate it based on width
-    if (position.left === null) {
-        position.right = 20;
+    // Determine position:
+    // If we already have windows open, calculate a cascaded position to avoid overlap.
+    // Otherwise, use the saved state (or default) for the first window.
+    if (floatingWindows.size > 0) {
+      position = calculateWindowPosition();
+      // calculateWindowPosition returns {top, right}, so ensure left is null
+      position.left = null;
+    } else {
+      position = { top: state.top, left: state.left };
+      
+      // If right is not saved and left is null, default to right: 20
+      if (position.left === null) {
+          position.right = 20;
+      }
     }
 
     // Create Host Element
@@ -188,7 +199,11 @@ async function createFloatingWindow(uniqueId) {
         }
         
         #floating-window-${uniqueId} #chat-send-${uniqueId}:not(:disabled):hover { opacity: 0.9; }
-        #floating-window-${uniqueId} #chat-send-${uniqueId}:not(:disabled):hover { opacity: 0.9; }
+        #floating-window-${uniqueId} #chat-send-${uniqueId}:disabled {
+            background-color: #555 !important;
+            cursor: not-allowed;
+            opacity: 0.5;
+        }
         #floating-window-${uniqueId} #chat-input-${uniqueId}:focus { border-color: #4a9eff; }
         #floating-window-${uniqueId} #content-${uniqueId}::-webkit-scrollbar { width: 8px; }
         #floating-window-${uniqueId} #content-${uniqueId}::-webkit-scrollbar-track { background: #2a2a2a; border-radius: 4px; }
@@ -276,7 +291,7 @@ async function createFloatingWindow(uniqueId) {
     setupChatListeners(uniqueId, win);
     
     // Make window interactive
-    makeDraggable(win, win.querySelector(`#title-bar-${uniqueId}`));
+    makeDraggable(uniqueId, win, win.querySelector(`#title-bar-${uniqueId}`));
     makeResizable(win, win.querySelector(`#resize-handle-${uniqueId}`));
     
     console.log(`[Content] Created floating window ${uniqueId} at position`, position);
@@ -303,6 +318,10 @@ function validateWindowState(state) {
   };
 
   const validatedState = { ...defaults, ...state };
+
+  // Enforce minimum dimensions to prevent restoring minimized (tiny) sizes
+  if (validatedState.width < UI_CONFIG.MIN_WIDTH) validatedState.width = UI_CONFIG.MIN_WIDTH;
+  if (validatedState.height < UI_CONFIG.MIN_HEIGHT) validatedState.height = UI_CONFIG.MIN_HEIGHT;
 
   const viewportWidth = window.innerWidth;
   const viewportHeight = window.innerHeight;
@@ -355,6 +374,14 @@ function setupWindowEventListeners(uniqueId, win) {
     const minimizeBtn = win.querySelector(`#minimize-btn-${uniqueId}`);
     const increaseFontBtn = win.querySelector(`#increase-font-${uniqueId}`);
     const decreaseFontBtn = win.querySelector(`#decrease-font-${uniqueId}`);
+    
+    const buttons = [closeBtn, minimizeBtn, increaseFontBtn, decreaseFontBtn];
+    buttons.forEach(btn => {
+      if (btn) {
+        // Prevent drag initiation when clicking buttons
+        btn.addEventListener('pointerdown', (e) => e.stopPropagation());
+      }
+    });
     
     if (closeBtn) {
       closeBtn.addEventListener('click', () => closeWindow(uniqueId));
@@ -731,7 +758,7 @@ function hideLoading(uniqueId) {
   }
 }
 
-function makeDraggable(el, handle) {
+function makeDraggable(uniqueId, el, handle) {
     let x0 = 0, y0 = 0, x1 = 0, y1 = 0;
     handle.onpointerdown = e => { // Changed from onmousedown
         e.preventDefault();
@@ -750,7 +777,16 @@ function makeDraggable(el, handle) {
             e.target.releasePointerCapture(e.pointerId); // Release pointer capture
             window.removeEventListener('pointermove', drag);
             window.removeEventListener('pointerup', stopDrag);
-            chrome.storage.local.set({ windowState: { top: el.offsetTop, left: el.offsetLeft, width: el.offsetWidth, height: el.offsetHeight } });
+
+            const isMin = isMinimized.get(uniqueId);
+            
+            let heightToSave = el.offsetHeight;
+            if (isMin && windowSizes.has(uniqueId)) {
+                // If minimized, use the stored full height instead of the current title-bar height
+                heightToSave = windowSizes.get(uniqueId).height;
+            }
+
+            chrome.storage.local.set({ windowState: { top: el.offsetTop, left: el.offsetLeft, width: el.offsetWidth, height: heightToSave } });
         };
 
         window.addEventListener('pointermove', drag);
