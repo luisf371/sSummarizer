@@ -25,8 +25,58 @@ const CONFIG = {
   MAX_TEXT_LENGTH: 100000, // Maximum text length to send to API
   REQUEST_TIMEOUT: 30000, // 30 seconds timeout for API requests
   RETRY_ATTEMPTS: 3,
-  YOUTUBE_TRANSCRIPT_TIMEOUT: 10000
+  YOUTUBE_TRANSCRIPT_TIMEOUT: 10000,
+  CONTEXT_MENU_ID: "summarize-selection"
 };
+
+// Initialize context menu on install/update
+chrome.runtime.onInstalled.addListener(() => {
+  setupContextMenu();
+});
+
+// Initialize context menu on startup
+chrome.runtime.onStartup.addListener(() => {
+  setupContextMenu();
+});
+
+// Update context menu when settings change
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'sync' && changes.enableContextMenu) {
+    setupContextMenu();
+  }
+});
+
+// Handle context menu clicks
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+  if (info.menuItemId === CONFIG.CONTEXT_MENU_ID && info.selectionText) {
+    console.log('[Background] Context menu clicked with selection');
+    // Pass the selected text directly to the handler
+    handleIconClick(tab, info.selectionText).catch(err => {
+      console.error('[Background] Context menu handler error:', err);
+    });
+  }
+});
+
+async function setupContextMenu() {
+  const { enableContextMenu } = await chrome.storage.sync.get('enableContextMenu');
+  
+  // Default to true if not set (undefined)
+  const isEnabled = enableContextMenu ?? true;
+
+  // Remove existing to avoid duplicates or to disable
+  chrome.contextMenus.removeAll(() => {
+    if (isEnabled) {
+      chrome.contextMenus.create({
+        id: CONFIG.CONTEXT_MENU_ID,
+        title: "Summarize selection",
+        contexts: ["selection"]
+      });
+      console.log('[Background] Context menu enabled');
+    } else {
+      console.log('[Background] Context menu disabled');
+    }
+  });
+}
 
 // Add message listener for stopping API requests and handling follow-ups
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -55,8 +105,8 @@ chrome.action.onClicked.addListener((tab) => {
   });
 });
 
-async function handleIconClick(tab) {
-  console.log('[Background] handleIconClick start – tab.id=', tab.id, 'url=', tab.url);
+async function handleIconClick(tab, directTextContent = null) {
+  console.log('[Background] handleIconClick start – tab.id=', tab.id, 'url=', tab.url, 'hasDirectText=', !!directTextContent);
 
   // Validate tab and URL
   if (!tab || !tab.id || !tab.url) {
@@ -80,6 +130,13 @@ async function handleIconClick(tab) {
   } catch (error) {
     console.error('[Background] Failed to initialize UI:', error);
     tabIdMap.delete(uniqueId);
+    return;
+  }
+
+  // If we have direct text (e.g. from context menu selection), skip scraping
+  if (directTextContent) {
+    console.log('[Background] Using direct text content from selection');
+    makeApiCall(directTextContent, uniqueId);
     return;
   }
 
