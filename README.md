@@ -1,188 +1,86 @@
-# AI Summarizer Pro - Chrome Extension
+![sSummarizer Icon](logo.png)
 
-A powerful Chrome extension that intelligently summarizes web content using AI. Supports regular web pages and YouTube videos with an enhanced floating window interface.
+# sSummarizer
 
-## 🚀 Features
+![License](https://img.shields.io/badge/license-Proprietary-red)
+![Language](https://img.shields.io/badge/language-JavaScript-yellow)
+![Version](https://img.shields.io/badge/version-1.12-blue)
 
-### Core Functionality
-- **Smart Content Extraction**: Automatically extracts text from web pages or YouTube video transcripts
-- **AI-Powered Summarization**: Uses configurable AI models to generate concise summaries
-- **Floating Window Interface**: Modern, draggable, and resizable summary display
-- **Real-time Streaming**: Shows AI responses as they're generated
-- **Multi-window Support**: Handle multiple summaries simultaneously
+🌍 **Supported Languages:** English, Spanish, French, Japanese, Portuguese (Brazilian), Chinese (Simplified)
 
-### Enhanced User Experience
-- **Modern UI Design**: Professional gradient styling with smooth animations
-- **Responsive Design**: Works on all screen sizes
-- **Font Size Controls**: Adjustable text size for better readability
-- **Minimize/Maximize**: Collapsible windows to save screen space
-- **Auto-positioning**: Smart window placement to avoid overlaps
+sSummarizer is an intelligent Chrome extension that leverages advanced AI models to provide concise, context-aware summaries of web content. Whether you are browsing complex articles, watching lengthy YouTube videos, or navigating deep Reddit threads, this tool extracts the essential information in seconds.
 
-### Advanced Configuration
-- **API Flexibility**: Works with OpenAI, Anthropic, or any compatible API
-- **Custom System Prompts**: Tailor AI behavior for specific use cases
-- **Model Selection**: Choose from different AI models
-- **Connection Testing**: Verify API settings before use
-- **Input Validation**: Real-time form validation with helpful feedback
+## Key Features
 
-## 📋 Installation
+*   **Multi-Provider AI Support**: Connect to OpenAI, Azure, Groq, Anthropic, Gemini, and more.
+*   **YouTube Intelligence**: Automatic transcript extraction with timestamp support and subtitle preferences.
+*   **Reddit Optimization**: Summarize entire threads with customizable comment depth and sorting logic.
+*   **Context Menu Integration**: Highlight any text on a page and summarize it instantly via the right-click menu.
+*   **Streaming Output**: Watch summaries generate in real-time with a smooth, responsive interface.
+*   **Debug Mode**: Inspect extracted content to understand exactly what data is being sent to the AI.
 
-1. Download or clone this repository
-2. Open Chrome and navigate to `chrome://extensions/`
-3. Enable "Developer mode" in the top right
-4. Click "Load unpacked" and select the extension folder
-5. The extension icon will appear in your toolbar
+## Quick Start
 
-## ⚙️ Configuration
+### Installation
 
-1. Click the extension icon and select "Options" or right-click → "Options"
-2. Configure your API settings:
-   - **API Endpoint URL**: Your AI service endpoint (e.g., `https://api.openai.com/v1/chat/completions`)
-   - **API Key**: Your authentication key
-   - **Model Name**: AI model to use (e.g., `gpt-3.5-turbo`, `gpt-4`)
-   - **System Prompt**: Custom instructions for the AI (optional)
-3. Click "Test Connection" to verify your settings
-4. Save your configuration
+1.  Clone this repository or download the source code.
+2.  Open Chrome and navigate to `chrome://extensions/`.
+3.  Enable **Developer mode** in the top right corner.
+4.  Click **Load unpacked** and select the `sSummarizer` directory.
 
-## 🎯 Usage
+### Configuration
 
-### For Web Pages
-1. Navigate to any webpage
-2. Click the extension icon in your toolbar
-3. Wait for the AI to analyze and summarize the content
-4. View the summary in the floating window
+1.  Right-click the sSummarizer icon and select **Options**, or click the gear icon in the extension popup.
+2.  Select your preferred **AI Provider** (e.g., OpenAI, Anthropic).
+3.  Enter your **API Key** and configure the model settings.
+4.  (Optional) Customize the **System Prompt** to change the summary style or language.
 
-### For YouTube Videos
-1. Navigate to a YouTube video page
-2. Click the extension icon
-3. The extension will extract the auto-generated transcript
-4. View the AI-generated summary of the video content
+## Usage
 
-### Window Controls
-- **Drag**: Click and drag the title bar to move the window
-- **Resize**: Drag the bottom-right corner to resize
-- **Font Size**: Use A⁺/A⁻ buttons to adjust text size
-- **Minimize**: Click the − button to collapse the window
-- **Close**: Click the × button to close the window
+### Web Pages
+Click the sSummarizer icon in your toolbar while on any article or blog post. A floating window will appear and begin generating a summary of the page content.
 
-## 🔧 Technical Improvements
+### YouTube Videos
+When on a YouTube video page, sSummarizer automatically detects the transcript. The summary will include key points and can be configured to respect specific timestamps.
 
-### Version 2.0 Enhancements
+### Reddit Threads
+On Reddit, the extension scrapes comments based on your configured depth. It provides a synthesized view of the discussion, capturing the community sentiment and top arguments.
 
-#### Error Handling & Validation
-- Comprehensive input validation for all configuration fields
-- Robust error handling with user-friendly messages
-- Network timeout protection with configurable limits
-- Graceful fallback for failed API requests
+## Overview
 
-#### Performance Optimizations
-- Text truncation to prevent oversized API requests (50,000 character limit)
-- Efficient memory management for multiple windows
-- Optimized DOM manipulation and event handling
-- Smart content sanitization to prevent XSS attacks
+sSummarizer is built using a modular architecture that separates content extraction from AI processing. The `content.js` script handles site-specific scraping (Web, YouTube, Reddit), while `background.js` manages API communication and streaming responses. 
 
-#### Security Improvements
-- Content Security Policy compliance
-- Input sanitization for all user-provided content
-- Secure API key storage using Chrome's sync storage
-- Protection against malicious content injection
+### Permissions Explanation
 
-#### User Experience Enhancements
-- Modern, responsive design with CSS Grid and Flexbox
-- Smooth animations and transitions
-- Accessibility improvements with proper ARIA labels
-- Mobile-friendly responsive layout
+*   **activeTab**: Required to access the content of the current tab when the user invokes the extension.
+*   **scripting**: Used to inject the extraction logic and the floating UI into the web page.
+*   **storage**: Necessary for saving user configurations, API keys, and custom prompts securely.
+*   **contextMenus**: Enables the "Summarize selection" feature in the browser's right-click menu.
 
-#### Code Quality
-- Comprehensive JSDoc documentation
-- Modular function architecture
-- Consistent error logging and debugging
-- Clean separation of concerns
+## FAQ
 
-## 🛠️ Development
+**1. Is an API key required to use the extension?**
+Yes, sSummarizer acts as a client for various AI providers. You must provide your own API key for OpenAI, Anthropic, Gemini, or other supported services.
 
-### File Structure
-```
-├── manifest.json          # Extension configuration
-├── background.js          # Service worker (main logic)
-├── content.js            # Content script (UI management)
-├── options.html          # Settings page HTML
-├── options.js            # Settings page logic
-├── styles.css            # Modern CSS styling
-├── logo.png              # Extension icon
-└── README.md             # Documentation
-```
+**2. Is my data sent to any third-party servers?**
+No. Your API keys are stored locally in your browser's storage, and requests are sent directly from your machine to the AI provider's official API endpoints.
 
-### Key Components
+**3. Why is the YouTube transcript not appearing?**
+Ensure the video has captions available. sSummarizer attempts to pull official or auto-generated captions; if none exist, it may not be able to generate a video summary.
 
-#### Background Script (`background.js`)
-- Handles extension icon clicks
-- Manages API communication with streaming support
-- Extracts content from web pages and YouTube videos
-- Processes and forwards AI responses to content script
+**4. Can I change the summary language?**
+Yes. You can modify the "System Prompt" in the Options page to instruct the AI to respond in your preferred language (e.g., "Summarize the following text in French").
 
-#### Content Script (`content.js`)
-- Creates and manages floating windows
-- Handles user interactions (drag, resize, font controls)
-- Displays streaming AI responses
-- Manages multiple concurrent windows
+**5. What is Debug Mode?**
+Debug Mode allows you to see the raw text extracted from the page before it is sent to the AI. This is useful for troubleshooting extraction issues on specific websites.
 
-#### Options Page (`options.html` + `options.js`)
-- Modern configuration interface
-- Real-time validation and feedback
-- API connection testing
-- Secure settings storage
+## Credits
 
-## 🔒 Privacy & Security
+**Author:** [tekky.cc](https://tekky.cc)
 
-- **Local Storage**: All settings are stored locally in your browser
-- **No Data Collection**: The extension doesn't collect or transmit personal data
-- **API Security**: API keys are stored securely using Chrome's encrypted storage
-- **Content Sanitization**: All displayed content is sanitized to prevent XSS attacks
+This project was developed as an independent tool for intelligent web content consumption.
 
-## 🐛 Troubleshooting
+## License
 
-### Common Issues
+This extension is **Proprietary Software**. See `fork.md` for more details.
 
-**Extension not working on certain pages**
-- Some pages (chrome://, extension pages) are restricted by browser security
-- Try the extension on regular websites
-
-**API connection fails**
-- Verify your API URL and key in the options page
-- Use the "Test Connection" button to diagnose issues
-- Check your internet connection and API service status
-
-**Floating window not appearing**
-- Check browser console for error messages
-- Ensure content scripts are allowed on the current page
-- Try refreshing the page and clicking the extension icon again
-
-**YouTube transcripts not found**
-- The video must have auto-generated English captions
-- Some videos may not have transcripts available
-- Try with different YouTube videos
-
-## 📝 Changelog
-
-### Version 2.0
-- Complete UI/UX overhaul with modern design
-- Enhanced error handling and validation
-- Performance optimizations and security improvements
-- Added connection testing and real-time validation
-- Improved accessibility and responsive design
-- Comprehensive code documentation and refactoring
-
-### Version 1.1
-- Initial release with basic functionality
-- Simple floating window interface
-- YouTube transcript support
-- Basic API integration
-
-## 🤝 Contributing
-
-Contributions are welcome! Please feel free to submit issues, feature requests, or pull requests.
-
-## 📄 License
-
-This project is open source and available under the MIT License.
