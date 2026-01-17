@@ -1,5 +1,95 @@
 // options.js - Enhanced Options Page with Validation and User Feedback
+
+// =====================
+// i18n Support
+// =====================
+function initI18n() {
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    const key = el.getAttribute('data-i18n');
+    const message = chrome.i18n.getMessage(key);
+    if (message) {
+      if (el.children.length === 0 || el.tagName === 'OPTION') {
+        el.textContent = message;
+      }
+    }
+  });
+  
+  const titleMsg = chrome.i18n.getMessage('extName');
+  if (titleMsg) {
+    document.title = titleMsg + ' - ' + chrome.i18n.getMessage('optionsTitle');
+  }
+}
+
+// =====================
+// Theme Support
+// =====================
+function initTheme() {
+  const themeToggle = document.getElementById('themeToggle');
+  
+  chrome.storage.local.get(['theme'], (result) => {
+    const theme = result.theme || 'dark';
+    applyTheme(theme);
+  });
+  
+  if (themeToggle) {
+    themeToggle.addEventListener('click', () => {
+      const currentTheme = document.body.getAttribute('data-theme') || 'dark';
+      const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+      applyTheme(newTheme);
+      chrome.storage.local.set({ theme: newTheme });
+    });
+  }
+  
+  function applyTheme(theme) {
+    document.body.setAttribute('data-theme', theme);
+  }
+}
+
+// =====================
+// Toast Notification
+// =====================
+let toastTimeout = null;
+let toastVisible = false;
+
+function showToast(message, type = 'success') {
+  const toast = document.getElementById('toast');
+  if (!toast) return;
+  
+  const toastIcon = toast.querySelector('.toast-icon');
+  const toastMessage = toast.querySelector('.toast-message');
+  
+  if (toastTimeout) {
+    clearTimeout(toastTimeout);
+  }
+  
+  if (toastVisible) {
+    toast.classList.remove('show');
+    setTimeout(() => displayToast(), 100);
+  } else {
+    displayToast();
+  }
+  
+  function displayToast() {
+    toastMessage.textContent = message;
+    toastIcon.textContent = type === 'success' ? '\u2713' : '\u2717';
+    toast.className = 'toast ' + type;
+    
+    requestAnimationFrame(() => {
+      toast.classList.add('show');
+      toastVisible = true;
+    });
+    
+    toastTimeout = setTimeout(() => {
+      toast.classList.remove('show');
+      toastVisible = false;
+    }, 1500);
+  }
+}
+
 document.addEventListener('DOMContentLoaded', function() {
+  initI18n();
+  initTheme();
+  
   const optionsForm = document.getElementById('options-form');
   const apiKeyInput = document.getElementById('api-key');
   const apiUrlInput = document.getElementById('api-url');
@@ -478,25 +568,17 @@ If and ONLY if timestamps are provided;
   
 
     function showStatus(message, type) {
-
       statusDiv.dataset.type = type;
-
       statusDiv.textContent = message;
-
       statusDiv.style.display = 'block';
-
   
-
+      showToast(message, type);
+  
       if (type === 'success' || type === 'info') {
-
         setTimeout(() => {
-
           statusDiv.style.display = 'none';
-
         }, 3000);
-
       }
-
     }
 
   
