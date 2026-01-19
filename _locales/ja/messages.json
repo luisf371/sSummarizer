@@ -422,5 +422,17 @@
   "emptyDropdown": {
     "message": "コマンドが見つかりません。拡張機能のオプションで設定してください。",
     "description": "Message shown in dropdown when no commands match"
+  },
+  "menuQuickCommands": {
+    "message": "クイックコマンド",
+    "description": "Label for the quick commands parent menu item"
+  },
+  "menuConfigureCommands": {
+    "message": "コマンドを設定...",
+    "description": "Label for the configure commands placeholder item"
+  },
+  "menuSummarizeSelection": {
+    "message": "選択範囲を要約",
+    "description": "Label for the summarize selection context menu item"
   }
 }

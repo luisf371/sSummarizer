@@ -331,8 +331,8 @@ async function createFloatingWindow(uniqueId) {
     // Add scroll event listener to track user scrolling
     if (contentEl) {
       contentEl.addEventListener('scroll', () => {
-        // A threshold of 1px is used to account for potential floating point inaccuracies.
-        const isScrolledToBottom = contentEl.scrollHeight - contentEl.clientHeight <= contentEl.scrollTop + 1;
+        // A threshold of 10px is used to account for layout shifts and inaccuracies.
+        const isScrolledToBottom = contentEl.scrollHeight - contentEl.clientHeight <= contentEl.scrollTop + 10;
         userScrolledUp.set(uniqueId, !isScrolledToBottom);
       });
     }
@@ -612,7 +612,9 @@ function handleMessage(content, uniqueId) {
     // Auto-scroll to bottom
     // Auto-scroll to bottom only if user hasn't scrolled up
     if (!userScrolledUp.get(uniqueId)) {
-      contentElement.scrollTop = contentElement.scrollHeight;
+      requestAnimationFrame(() => {
+        contentElement.scrollTop = contentElement.scrollHeight;
+      });
     }
     
     // Apply current font size
@@ -677,8 +679,8 @@ function convertMarkdownToHtml(markdown) {
     while (i < lines.length) {
         const line = lines[i];
 
-        // Headers (with support for You: prefix)
-        const headerMatch = line.match(/^(\s*(?:\*\*\*(?:You):\*\*\*\s*)?)(#{1,6})\s+(.*)$/);
+        // Headers (with support for YOU: prefix)
+        const headerMatch = line.match(/^(\s*(?:\*\*(?:YOU):\*\*\s*)?)(#{1,6})\s+(.*)$/);
         if (headerMatch) {
             const prefix = headerMatch[1];
             const hashes = headerMatch[2];
@@ -710,15 +712,15 @@ function convertMarkdownToHtml(markdown) {
             continue;
         }
         
-        // Lists (with support for You: prefix)
-        const listMatch = line.match(/^(\s*(?:\*\*\*(?:You):\*\*\*\s*)?)([-*]|\d+\.)\s+(.*)$/);
+        // Lists (with support for YOU: prefix)
+        const listMatch = line.match(/^(\s*(?:\*\*(?:YOU):\*\*\s*)?)([-*]|\d+\.)\s+(.*)$/);
         if (listMatch) {
             let listHtml = '';
             const listStack = [];
             
             while (i < lines.length) {
                 const currentLine = lines[i];
-                const itemMatch = currentLine.match(/^(\s*(?:\*\*\*(?:You):\*\*\*\s*)?)([-*]|\d+\.)\s+(.*)$/);
+                const itemMatch = currentLine.match(/^(\s*(?:\*\*(?:YOU):\*\*\s*)?)([-*]|\d+\.)\s+(.*)$/);
                 
                 if (!itemMatch && !currentLine.match(/^\s+.*$/)) break;
 
@@ -731,7 +733,7 @@ function convertMarkdownToHtml(markdown) {
 
                     // Look ahead for multi-line list items
                     let nextIndex = i + 1;
-                    while (nextIndex < lines.length && lines[nextIndex].match(/^\s{2,}/) && !lines[nextIndex].match(/^(\s*(?:\*\*\*(?:You):\*\*\*\s*)?)([-*]|\d+\.)\s/)) {
+                    while (nextIndex < lines.length && lines[nextIndex].match(/^\s{2,}/) && !lines[nextIndex].match(/^(\s*(?:\*\*(?:YOU):\*\*\s*)?)([-*]|\d+\.)\s/)) {
                         content += ' ' + lines[nextIndex].trim();
                         nextIndex++;
                     }
@@ -903,9 +905,17 @@ function handleStreamEnd(request) {
   // Add the assistant's response
   history.push({ role: 'assistant', content: fullResponse });
   
-  // Enable chat input
   const win = floatingWindows.get(uniqueId); // ShadowRoot
   if (win) {
+    // Final auto-scroll check to ensure it ends at the bottom
+    const contentElement = win.querySelector(`#content-${uniqueId}`);
+    if (contentElement && !userScrolledUp.get(uniqueId)) {
+      requestAnimationFrame(() => {
+        contentElement.scrollTop = contentElement.scrollHeight;
+      });
+    }
+    
+    // Enable chat input
     const input = win.querySelector(`#chat-input-${uniqueId}`);
     const btn = win.querySelector(`#chat-send-${uniqueId}`);
     if (input) {
@@ -1167,8 +1177,10 @@ function sendFollowUp(uniqueId, question) {
         }
         if (btn) btn.disabled = true;
         
-        // Format question
-        const formattedQuestion = `\n\n---\n***You:*** ${question}\n\n---\n`;
+        // Format question - show /command for slash commands, otherwise text
+        const selected = selectedSlashCommand.get(uniqueId);
+        const displayQuestion = selected ? `/${selected.command}` : (question.startsWith('/') ? question.split('\n')[0] : question);
+        const formattedQuestion = `\n\n---\n**YOU:** ${displayQuestion}\n\n---\n`;
         
         // Render question immediately
         handleMessage(formattedQuestion, uniqueId);

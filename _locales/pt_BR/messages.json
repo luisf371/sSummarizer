@@ -422,5 +422,17 @@
   "emptyDropdown": {
     "message": "Nenhum comando encontrado. Configure nas opções da extensão.",
     "description": "Message shown in dropdown when no commands match"
+  },
+  "menuQuickCommands": {
+    "message": "Comandos rápidos",
+    "description": "Label for the quick commands parent menu item"
+  },
+  "menuConfigureCommands": {
+    "message": "Configurar comandos...",
+    "description": "Label for the configure commands placeholder item"
+  },
+  "menuSummarizeSelection": {
+    "message": "Resumir seleção",
+    "description": "Label for the summarize selection context menu item"
   }
 }

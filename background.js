@@ -41,7 +41,7 @@ chrome.runtime.onStartup.addListener(() => {
 
 // Update context menu when settings change
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'sync' && changes.enableContextMenu) {
+  if (area === 'sync' && (changes.enableContextMenu || changes.slashCommands)) {
     setupContextMenu();
   }
 });
@@ -49,31 +49,79 @@ chrome.storage.onChanged.addListener((changes, area) => {
 // Handle context menu clicks
 chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (info.menuItemId === CONFIG.CONTEXT_MENU_ID && info.selectionText) {
+    // Existing: Summarize selection with default prompt
     console.log('[Background] Context menu clicked with selection');
-    // Pass the selected text directly to the handler
     handleIconClick(tab, info.selectionText).catch(err => {
       console.error('[Background] Context menu handler error:', err);
+    });
+  } else if (info.menuItemId.startsWith('slash-cmd-')) {
+    // New: Slash command clicked from extension icon menu
+    const index = parseInt(info.menuItemId.replace('slash-cmd-', ''), 10);
+    console.log(`[Background] Slash command menu item clicked, index: ${index}`);
+    
+    chrome.storage.sync.get(['slashCommands'], (result) => {
+      const cmd = result.slashCommands?.[index];
+      if (cmd) {
+        console.log(`[Background] Running slash command: /${cmd.command}`);
+        handleIconClick(tab, null, cmd.prompt, cmd.command).catch(err => {
+          console.error('[Background] Slash command handler error:', err);
+        });
+      } else {
+        console.error('[Background] Slash command not found at index:', index);
+      }
     });
   }
 });
 
 async function setupContextMenu() {
-  const { enableContextMenu } = await chrome.storage.sync.get('enableContextMenu');
+  const { enableContextMenu, slashCommands } = await chrome.storage.sync.get(['enableContextMenu', 'slashCommands']);
   
   // Default to true if not set (undefined)
   const isEnabled = enableContextMenu ?? true;
+  const commands = slashCommands || [];
 
   // Remove existing to avoid duplicates or to disable
   chrome.contextMenus.removeAll(() => {
+    // Create parent menu for Quick Commands on extension icon
+    chrome.contextMenus.create({
+      id: "quick-commands-parent",
+      title: chrome.i18n.getMessage('menuQuickCommands') || "Quick Commands",
+      contexts: ["action"]
+    });
+
+    if (commands.length > 0) {
+      // Create child menu items for each slash command
+      commands.forEach((cmd, index) => {
+        chrome.contextMenus.create({
+          id: `slash-cmd-${index}`,
+          parentId: "quick-commands-parent",
+          title: `/${cmd.command}`,
+          contexts: ["action"]
+        });
+      });
+      console.log(`[Background] Created ${commands.length} slash command menu items`);
+    } else {
+      // Show placeholder when no commands configured
+      chrome.contextMenus.create({
+        id: "configure-commands",
+        parentId: "quick-commands-parent",
+        title: chrome.i18n.getMessage('menuConfigureCommands') || "Configure commands...",
+        contexts: ["action"],
+        enabled: false
+      });
+      console.log('[Background] No slash commands configured, showing placeholder');
+    }
+
+    // Existing selection context menu
     if (isEnabled) {
       chrome.contextMenus.create({
         id: CONFIG.CONTEXT_MENU_ID,
-        title: "Summarize selection",
+        title: chrome.i18n.getMessage('menuSummarizeSelection') || "Summarize selection",
         contexts: ["selection"]
       });
-      console.log('[Background] Context menu enabled');
+      console.log('[Background] Selection context menu enabled');
     } else {
-      console.log('[Background] Context menu disabled');
+      console.log('[Background] Selection context menu disabled');
     }
   });
 }
@@ -105,8 +153,8 @@ chrome.action.onClicked.addListener((tab) => {
   });
 });
 
-async function handleIconClick(tab, directTextContent = null) {
-  console.log('[Background] handleIconClick start – tab.id=', tab.id, 'url=', tab.url, 'hasDirectText=', !!directTextContent);
+async function handleIconClick(tab, directTextContent = null, customPrompt = null, commandName = null) {
+  console.log('[Background] handleIconClick start – tab.id=', tab.id, 'url=', tab.url, 'hasDirectText=', !!directTextContent, 'hasCustomPrompt=', !!customPrompt, 'commandName=', commandName);
 
   // Validate tab and URL
   if (!tab || !tab.id || !tab.url) {
@@ -136,7 +184,7 @@ async function handleIconClick(tab, directTextContent = null) {
   // If we have direct text (e.g. from context menu selection), skip scraping
   if (directTextContent) {
     console.log('[Background] Using direct text content from selection');
-    makeApiCall(directTextContent, uniqueId);
+    makeApiCall(directTextContent, uniqueId, customPrompt, commandName);
     return;
   }
 
@@ -193,7 +241,7 @@ async function handleIconClick(tab, directTextContent = null) {
           
           if (transcriptText && transcriptText.trim().length > 0) {
             console.log('[Background] Successfully extracted transcript, length:', transcriptText.length);
-            makeApiCall(transcriptText, uniqueId);
+            makeApiCall(transcriptText, uniqueId, customPrompt, commandName);
           } else {
             handleApiError(uniqueId, 'The transcript extractor returned empty results. No captions found.');
           }
@@ -221,7 +269,7 @@ async function handleIconClick(tab, directTextContent = null) {
               const extractedContent = results?.[0]?.result;
               if (extractedContent) {
                   console.log('[Background] Reddit Extraction Result:', extractedContent.substring(0, 500) + '...');
-                  makeApiCall(extractedContent, uniqueId);
+                  makeApiCall(extractedContent, uniqueId, customPrompt, commandName);
               } else {
                   handleApiError(uniqueId, 'Failed to extract Reddit content. Please ensure you are on a thread page.');
               }
@@ -246,7 +294,7 @@ async function handleIconClick(tab, directTextContent = null) {
         }
 
         if (results && results[0] && results[0].result) {
-          makeApiCall(results[0].result, uniqueId);
+          makeApiCall(results[0].result, uniqueId, customPrompt, commandName);
         } else {
           handleApiError(uniqueId, 'Could not get content from this page.');
         }
@@ -307,7 +355,7 @@ function truncateText(text, maxLength = CONFIG.MAX_TEXT_LENGTH) {
 // Note: YouTube transcript fetching is now handled entirely by the content script
 // using the same approach as the Python youtube-transcript-api implementation
 
-async function makeApiCall(inputData, uniqueId) {
+async function makeApiCall(inputData, uniqueId, customUserPrompt = null, commandName = null) {
   // Check if the request was explicitly cancelled
   if (cancelledRequests.has(uniqueId)) {
     console.log(`[API] Request ${uniqueId} was cancelled, skipping API call`);
@@ -347,10 +395,18 @@ async function makeApiCall(inputData, uniqueId) {
             effectiveSystemPrompt += '\n\n' + timestampPrompt.trim();
           }
 
+          let payloadContent = debugContent;
+          if (customUserPrompt && typeof inputData === 'string') {
+              payloadContent = `[Custom Prompt]: ${customUserPrompt}\n\n[Extracted Content]:\n${debugContent}`;
+          }
+
           await sendMessageSafely(tab, { action: 'hideLoading', uniqueId });
+          
+          const label = commandName ? `/${commandName}` : (customUserPrompt ? 'Custom Prompt' : 'Default Summary');
+          
           await sendMessageSafely(tab, {
               action: 'appendToFloatingWindow',
-              content: `**[DEBUG MODE]**\n\n**Model:** ${model}\n**Target URL:** ${apiUrl}\n**System Prompt:**\n${effectiveSystemPrompt}\n\n**Content Payload (${debugContent.length} chars):**\n\n${debugContent}\n`,
+              content: `**[DEBUG MODE]**\n\n**Action:** ${label}\n**Model:** ${model}\n**Target URL:** ${apiUrl}\n**System Prompt:**\n${effectiveSystemPrompt}\n\n**Content Payload (${payloadContent.length} chars):**\n\n${payloadContent}\n`,
               uniqueId
           });
           
@@ -395,9 +451,24 @@ async function makeApiCall(inputData, uniqueId) {
         // Warning suppressed for user interface to avoid confusion, logged to console only.
       }
       
+      // If a custom user prompt (from a slash command) is provided, show it in the UI
+      if (customUserPrompt) {
+          const tab = tabIdMap.get(uniqueId);
+          if (tab) {
+              // Use slash command name if available, otherwise first line of prompt
+              const label = commandName ? `/${commandName}` : customUserPrompt.split('\n')[0].substring(0, 50);
+              const formattedPrompt = `\n**YOU:** ${label}${commandName ? '' : '...'}\n\n---\n`;
+              sendMessageSafely(tab, {
+                  action: 'appendToFloatingWindow',
+                  content: formattedPrompt,
+                  uniqueId
+              });
+          }
+      }
+
       messages = [
         { role: 'system', content: effectiveSystemPrompt },
-        { role: 'user', content: processedText }
+        { role: 'user', content: customUserPrompt ? `${customUserPrompt}\n\n---\n\n${processedText}` : processedText }
       ];
   } else if (Array.isArray(inputData)) {
       // Follow-up Request
