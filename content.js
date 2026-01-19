@@ -12,6 +12,9 @@ let contentBuffers = new Map();
 let userScrolledUp = new Map();
 let chatHistories = new Map();
 let isChatProcessing = new Map();
+let slashCommandsCache = new Map();
+let selectedSlashCommand = new Map();
+let dropdownSelectedIndex = new Map();
 
  // Configuration constants
  const UI_CONFIG = {
@@ -128,9 +131,13 @@ async function createFloatingWindow(uniqueId) {
           </div>
         </div>
         
-        <div id="chat-area-${uniqueId}" style="padding: 10px; border-top: 1px solid #333; background: #252525; display: flex; gap: 8px; align-items: center; border-radius: 0 0 8px 8px;">
-           <input type="text" id="chat-input-${uniqueId}" placeholder="Thinking..." disabled style="flex-grow: 1; background: #1e1e1e; border: 1px solid #444; color: #fff; padding: 8px 12px; border-radius: 4px; outline: none; font-family: inherit; font-size: 13px; transition: border-color 0.2s;">
+        <div id="chat-area-${uniqueId}" style="padding: 10px; border-top: 1px solid #333; background: #252525; display: flex; gap: 8px; align-items: center; border-radius: 0 0 8px 8px; position: relative;">
+           <div id="chat-input-wrapper-${uniqueId}" style="flex-grow: 1; position: relative; display: flex; align-items: center;">
+             <input type="text" id="chat-input-${uniqueId}" placeholder="${chrome.i18n.getMessage('placeholderThinking') || 'Thinking...'}" disabled style="width: 100%; background: #1e1e1e; border: 1px solid #444; color: #fff; padding: 8px 12px; border-radius: 4px; outline: none; font-family: inherit; font-size: 13px; transition: all 0.2s;">
+             <button id="clear-command-${uniqueId}" style="display: none; position: absolute; right: 6px; top: 50%; transform: translateY(-50%); background: transparent; border: none; color: #888; cursor: pointer; font-size: 14px; padding: 4px 6px; line-height: 1; border-radius: 3px;">×</button>
+           </div>
            <button id="chat-send-${uniqueId}" disabled style="background: #4a9eff; border: none; color: white; border-radius: 4px; width: 32px; height: 32px; padding: 0; display: flex; align-items: center; justify-content: center; flex-shrink: 0; cursor: pointer; font-size: 13px; transition: opacity 0.2s; opacity: 0.6;">➤</button>
+           <div id="slash-dropdown-${uniqueId}" class="slash-dropdown" style="display: none; position: absolute; bottom: 100%; left: 10px; right: 50px; background: #2a2a2a; border: 1px solid #444; border-radius: 4px; max-height: 180px; overflow-y: auto; z-index: 100; margin-bottom: 4px; box-shadow: 0 -4px 12px rgba(0,0,0,0.3);"></div>
         </div>
 
         <div id="resize-handle-${uniqueId}" style="width: 12px; height: 12px; background: linear-gradient(135deg, #555, #777); position: absolute; right: 0; bottom: 0; cursor: se-resize; border-radius: 0 0 8px 0; z-index: 20;"></div>
@@ -205,6 +212,43 @@ async function createFloatingWindow(uniqueId) {
             opacity: 0.5;
         }
         #floating-window-${uniqueId} #chat-input-${uniqueId}:focus { border-color: #4a9eff; }
+        #floating-window-${uniqueId} #chat-input-${uniqueId}.command-locked {
+            background: #2a2a2a;
+            border-color: #555;
+            color: #4a9eff;
+            font-weight: 500;
+            padding-right: 32px;
+        }
+        #floating-window-${uniqueId} #clear-command-${uniqueId}:hover {
+            color: #fff;
+            background: rgba(255,255,255,0.1);
+        }
+        #floating-window-${uniqueId} .slash-dropdown {
+            scrollbar-width: thin;
+            scrollbar-color: #555 #2a2a2a;
+        }
+        #floating-window-${uniqueId} .slash-dropdown::-webkit-scrollbar { width: 6px; }
+        #floating-window-${uniqueId} .slash-dropdown::-webkit-scrollbar-track { background: #2a2a2a; }
+        #floating-window-${uniqueId} .slash-dropdown::-webkit-scrollbar-thumb { background: #555; border-radius: 3px; }
+        #floating-window-${uniqueId} .slash-item {
+            padding: 6px 12px;
+            cursor: pointer;
+            font-size: 13px;
+            color: #4a9eff;
+            font-weight: 500;
+            border-bottom: 1px solid #333;
+        }
+        #floating-window-${uniqueId} .slash-item:last-child { border-bottom: none; }
+        #floating-window-${uniqueId} .slash-item:hover,
+        #floating-window-${uniqueId} .slash-item.selected {
+            background: rgba(74, 158, 255, 0.2);
+        }
+        #floating-window-${uniqueId} .slash-empty {
+            padding: 12px;
+            color: #888;
+            font-size: 12px;
+            text-align: center;
+        }
         #floating-window-${uniqueId} #content-${uniqueId}::-webkit-scrollbar { width: 8px; }
         #floating-window-${uniqueId} #content-${uniqueId}::-webkit-scrollbar-track { background: #2a2a2a; border-radius: 4px; }
         #floating-window-${uniqueId} #content-${uniqueId}::-webkit-scrollbar-thumb { background: #555; border-radius: 4px; }
@@ -273,6 +317,13 @@ async function createFloatingWindow(uniqueId) {
     windowPositions.set(uniqueId, position);
     userScrolledUp.set(uniqueId, false);
     isChatProcessing.set(uniqueId, false);
+    selectedSlashCommand.set(uniqueId, null);
+    dropdownSelectedIndex.set(uniqueId, -1);
+
+    // Load slash commands from storage
+    chrome.storage.sync.get(['slashCommands'], (result) => {
+      slashCommandsCache.set(uniqueId, result.slashCommands || []);
+    });
 
     const win = shadow.querySelector(`#floating-window-${uniqueId}`);
     const contentEl = win.querySelector(`#content-${uniqueId}`);
@@ -444,6 +495,9 @@ function cleanupWindowState(uniqueId) {
   windowSizes.delete(uniqueId);
   contentBuffers.delete(uniqueId);
   userScrolledUp.delete(uniqueId);
+  slashCommandsCache.delete(uniqueId);
+  selectedSlashCommand.delete(uniqueId);
+  dropdownSelectedIndex.delete(uniqueId);
 }
 
 /**
@@ -608,8 +662,9 @@ function getIndent(line) {
 
 function convertMarkdownToHtml(markdown) {
     const processInline = (text) => {
-        return text.trim()
-            .replace(/\*\*(.*?)\*\*/g, '<strong><em>$1</em></strong>')
+        if (!text) return '';
+        return text
+            .replace(/\*\*\*(.*?)\*\*\*/g, '<strong><em>$1</em></strong>')
             .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
             .replace(/\*(.*?)\*/g, '<em>$1</em>')
             .replace(/`([^`]+)`/g, '<code>$1</code>');
@@ -622,10 +677,15 @@ function convertMarkdownToHtml(markdown) {
     while (i < lines.length) {
         const line = lines[i];
 
-        // Headers
-        if (line.match(/^#{1,6}\s/)) {
-            const level = line.match(/^#+/)[0].length;
-            html += `<h${level}>${processInline(line.replace(/^#+\s*/, ''))}</h${level}>\n`;
+        // Headers (with support for You: prefix)
+        const headerMatch = line.match(/^(\s*(?:\*\*\*(?:You):\*\*\*\s*)?)(#{1,6})\s+(.*)$/);
+        if (headerMatch) {
+            const prefix = headerMatch[1];
+            const hashes = headerMatch[2];
+            const content = headerMatch[3];
+            const level = hashes.length;
+            
+            html += `<h${level}>${prefix ? processInline(prefix) : ''}${processInline(content)}</h${level}>\n`;
             i++;
             continue;
         }
@@ -650,21 +710,28 @@ function convertMarkdownToHtml(markdown) {
             continue;
         }
         
-        // Lists
-        if (line.match(/^(\s*)([-*]|\d+\.)\s/)) {
+        // Lists (with support for You: prefix)
+        const listMatch = line.match(/^(\s*(?:\*\*\*(?:You):\*\*\*\s*)?)([-*]|\d+\.)\s+(.*)$/);
+        if (listMatch) {
             let listHtml = '';
             const listStack = [];
             
-            while (i < lines.length && lines[i].match(/^(\s*)([-*]|\d+\.)\s|^\s+.*$/)) {
-                 const itemMatch = lines[i].match(/^(\s*)([-*]|\d+\.)\s(.*)/);
+            while (i < lines.length) {
+                const currentLine = lines[i];
+                const itemMatch = currentLine.match(/^(\s*(?:\*\*\*(?:You):\*\*\*\s*)?)([-*]|\d+\.)\s+(.*)$/);
+                
+                if (!itemMatch && !currentLine.match(/^\s+.*$/)) break;
+
                 if (itemMatch) {
-                    const indent = itemMatch[1].length;
-                    const type = itemMatch[2].match(/\d/) ? 'ol' : 'ul';
+                    const prefix = itemMatch[1];
+                    const marker = itemMatch[2];
                     let content = itemMatch[3];
+                    const indent = (prefix ? prefix.length : 0) + (itemMatch[1].match(/^\s*/) ? itemMatch[1].match(/^\s*/)[0].length : 0);
+                    const type = marker.match(/\d/) ? 'ol' : 'ul';
 
                     // Look ahead for multi-line list items
                     let nextIndex = i + 1;
-                    while (nextIndex < lines.length && lines[nextIndex].match(/^\s{2,}/) && !lines[nextIndex].match(/^(\s*)([-*]|\d+\.)\s/)) {
+                    while (nextIndex < lines.length && lines[nextIndex].match(/^\s{2,}/) && !lines[nextIndex].match(/^(\s*(?:\*\*\*(?:You):\*\*\*\s*)?)([-*]|\d+\.)\s/)) {
                         content += ' ' + lines[nextIndex].trim();
                         nextIndex++;
                     }
@@ -679,10 +746,9 @@ function convertMarkdownToHtml(markdown) {
                        listHtml += `<${type}>\n`;
                        listStack.push({ type, indent });
                     }
-                    listHtml += `<li>${processInline(content)}</li>\n`;
+                    listHtml += `<li>${prefix ? processInline(prefix) : ''}${processInline(content)}</li>\n`;
                     i = nextIndex;
                 } else {
-                    // This case handles empty lines between list items, which we'll ignore for now
                     i++;
                 }
             }
@@ -844,7 +910,7 @@ function handleStreamEnd(request) {
     const btn = win.querySelector(`#chat-send-${uniqueId}`);
     if (input) {
         input.disabled = false;
-        input.placeholder = "Ask a follow-up...";
+        input.placeholder = chrome.i18n.getMessage('placeholderFollowUp') || "Ask a follow-up...";
     }
     if (btn) btn.disabled = false;
   }
@@ -853,35 +919,237 @@ function handleStreamEnd(request) {
 }
 
 function setupChatListeners(uniqueId, win) {
-    // win is Element (#floating-window-id) passed from createFloatingWindow
     const input = win.querySelector(`#chat-input-${uniqueId}`);
     const sendBtn = win.querySelector(`#chat-send-${uniqueId}`);
+    const dropdown = win.querySelector(`#slash-dropdown-${uniqueId}`);
     
     const submit = () => {
-        const text = input ? input.value.trim() : '';
-        if (text && !isChatProcessing.get(uniqueId)) {
-            sendFollowUp(uniqueId, text);
-            if (input) input.value = '';
+        const selected = selectedSlashCommand.get(uniqueId);
+        let textToSend = '';
+        
+        if (selected) {
+            textToSend = selected.prompt;
+        } else {
+            textToSend = input ? input.value.trim() : '';
+        }
+        
+        if (textToSend && !isChatProcessing.get(uniqueId)) {
+            sendFollowUp(uniqueId, textToSend);
+            const clearBtn = win.querySelector(`#clear-command-${uniqueId}`);
+            if (input) {
+                input.value = '';
+                input.classList.remove('command-locked');
+                input.readOnly = false;
+            }
+            if (clearBtn) {
+                clearBtn.style.display = 'none';
+            }
+            selectedSlashCommand.set(uniqueId, null);
+            hideSlashDropdown(uniqueId);
+        }
+    };
+
+    const hideSlashDropdown = (id) => {
+        const dd = win.querySelector(`#slash-dropdown-${id}`);
+        if (dd) dd.style.display = 'none';
+        dropdownSelectedIndex.set(id, -1);
+    };
+
+    const showSlashDropdown = (id, filterText) => {
+        const dd = win.querySelector(`#slash-dropdown-${id}`);
+        if (!dd) return;
+        
+        const commands = slashCommandsCache.get(id) || [];
+        const filter = filterText.toLowerCase();
+        const filtered = commands.filter(cmd => 
+            cmd.command.toLowerCase().startsWith(filter)
+        );
+        
+        dd.innerHTML = '';
+        
+        if (filtered.length === 0) {
+            dd.innerHTML = `<div class="slash-empty">${chrome.i18n.getMessage('emptyDropdown') || 'No commands found. Configure in extension options.'}</div>`;
+        } else {
+            filtered.forEach((cmd, idx) => {
+                const item = document.createElement('div');
+                item.className = 'slash-item';
+                item.dataset.command = cmd.command;
+                item.dataset.index = idx;
+                item.textContent = '/' + cmd.command;
+                
+                item.addEventListener('click', () => {
+                    selectSlashCommand(id, cmd);
+                });
+                
+                dd.appendChild(item);
+            });
+        }
+        
+        dd.style.display = 'block';
+        dropdownSelectedIndex.set(id, -1);
+    };
+
+    const selectSlashCommand = (id, cmd) => {
+        selectedSlashCommand.set(id, cmd);
+        const clearBtn = win.querySelector(`#clear-command-${id}`);
+        if (input) {
+            input.value = '/' + cmd.command;
+            input.classList.add('command-locked');
+            input.readOnly = true;
+        }
+        if (clearBtn) {
+            clearBtn.style.display = 'block';
+        }
+        hideSlashDropdown(id);
+    };
+
+    const unlockInput = (id) => {
+        selectedSlashCommand.set(id, null);
+        const clearBtn = win.querySelector(`#clear-command-${id}`);
+        if (input) {
+            input.value = '';
+            input.classList.remove('command-locked');
+            input.readOnly = false;
+            input.focus();
+        }
+        if (clearBtn) {
+            clearBtn.style.display = 'none';
+        }
+    };
+
+    const updateDropdownSelection = (id, direction) => {
+        const dd = win.querySelector(`#slash-dropdown-${id}`);
+        if (!dd || dd.style.display === 'none') return;
+        
+        const items = dd.querySelectorAll('.slash-item');
+        if (items.length === 0) return;
+        
+        let currentIdx = dropdownSelectedIndex.get(id);
+        items.forEach(item => item.classList.remove('selected'));
+        
+        if (direction === 'down') {
+            currentIdx = currentIdx < items.length - 1 ? currentIdx + 1 : 0;
+        } else {
+            currentIdx = currentIdx > 0 ? currentIdx - 1 : items.length - 1;
+        }
+        
+        dropdownSelectedIndex.set(id, currentIdx);
+        items[currentIdx].classList.add('selected');
+        items[currentIdx].scrollIntoView({ block: 'nearest' });
+    };
+
+    const confirmDropdownSelection = (id) => {
+        const dd = win.querySelector(`#slash-dropdown-${id}`);
+        if (!dd || dd.style.display === 'none') return false;
+        
+        const idx = dropdownSelectedIndex.get(id);
+        if (idx >= 0) {
+            const items = dd.querySelectorAll('.slash-item');
+            if (items[idx]) {
+                const cmdName = items[idx].dataset.command;
+                const commands = slashCommandsCache.get(id) || [];
+                const cmd = commands.find(c => c.command === cmdName);
+                if (cmd) {
+                    selectSlashCommand(id, cmd);
+                    return true;
+                }
+            }
+        }
+        return false;
+    };
+
+    const checkExactMatch = (id, value) => {
+        if (!value.startsWith('/')) return;
+        const cmdName = value.substring(1).toLowerCase();
+        const commands = slashCommandsCache.get(id) || [];
+        const match = commands.find(c => c.command.toLowerCase() === cmdName);
+        if (match) {
+            selectSlashCommand(id, match);
         }
     };
 
     if (input) {
-        // Stop keydown propagation to prevent site hotkeys (like YouTube spacebar)
         input.addEventListener('keydown', (e) => {
             e.stopPropagation();
-            if (e.key === 'Enter' && !e.shiftKey) {
+            
+            const isLocked = selectedSlashCommand.get(uniqueId) !== null;
+            const dd = win.querySelector(`#slash-dropdown-${uniqueId}`);
+            const dropdownVisible = dd && dd.style.display !== 'none';
+            
+            if (isLocked && (e.key === 'Backspace' || e.key === 'Delete')) {
                 e.preventDefault();
-                submit();
+                unlockInput(uniqueId);
+                return;
+            }
+            
+            if (dropdownVisible) {
+                if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    updateDropdownSelection(uniqueId, 'down');
+                    return;
+                }
+                if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    updateDropdownSelection(uniqueId, 'up');
+                    return;
+                }
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (confirmDropdownSelection(uniqueId)) {
+                        return;
+                    }
+                    submit();
+                    return;
+                }
+                if (e.key === 'Escape') {
+                    e.preventDefault();
+                    hideSlashDropdown(uniqueId);
+                    input.value = '';
+                    return;
+                }
+            } else {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    submit();
+                    return;
+                }
             }
         });
         
-        // Also stop keyup/keypress to be safe
+        input.addEventListener('input', (e) => {
+            const value = e.target.value;
+            
+            if (value.startsWith('/') && value.length >= 1) {
+                const filterText = value.substring(1);
+                showSlashDropdown(uniqueId, filterText);
+                
+                if (filterText.length > 0) {
+                    checkExactMatch(uniqueId, value);
+                }
+            } else {
+                hideSlashDropdown(uniqueId);
+            }
+        });
+        
         input.addEventListener('keyup', (e) => e.stopPropagation());
         input.addEventListener('keypress', (e) => e.stopPropagation());
+        
+        input.addEventListener('blur', () => {
+            setTimeout(() => hideSlashDropdown(uniqueId), 150);
+        });
     }
     
     if (sendBtn) {
         sendBtn.addEventListener('click', submit);
+    }
+    
+    const clearBtn = win.querySelector(`#clear-command-${uniqueId}`);
+    if (clearBtn) {
+        clearBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            unlockInput(uniqueId);
+        });
     }
 }
 
@@ -895,12 +1163,12 @@ function sendFollowUp(uniqueId, question) {
         const btn = win.querySelector(`#chat-send-${uniqueId}`);
         if (input) {
             input.disabled = true;
-            input.placeholder = "Thinking...";
+            input.placeholder = chrome.i18n.getMessage('placeholderThinking') || "Thinking...";
         }
         if (btn) btn.disabled = true;
         
         // Format question
-        const formattedQuestion = `\n\n---\n**You:** ${question}\n\n**AI:** `;
+        const formattedQuestion = `\n\n---\n***You:*** ${question}\n\n---\n`;
         
         // Render question immediately
         handleMessage(formattedQuestion, uniqueId);

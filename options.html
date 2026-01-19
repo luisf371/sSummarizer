@@ -176,6 +176,32 @@
 
         <section class="form-section">
           <div class="section-header">
+            <span class="section-tag" data-i18n="stepSlash">Quick Commands</span>
+            <div>
+              <h2 data-i18n="stepSlashTitle">Quick Commands</h2>
+              <p class="section-description" data-i18n="stepSlashDesc">Create slash commands for quick prompts. Type / in the chat to use them.</p>
+            </div>
+          </div>
+          <div class="section-grid single-column">
+            <article class="settings-card full-span">
+              <div class="slash-commands-header">
+                <h3 data-i18n="cardSlashTitle">Slash Commands</h3>
+                <span class="command-count"><span id="command-count">0</span>/10</span>
+              </div>
+              <div id="slash-commands-list" class="slash-commands-list">
+                <!-- Commands will be dynamically added here -->
+              </div>
+              <button type="button" id="add-command-btn" class="add-command-btn" title="Add new command">
+                <span class="add-icon">+</span>
+                <span data-i18n="btnAddCommand">Add Command</span>
+              </button>
+              <small class="help-text" data-i18n="helpSlash">Commands must be alphanumeric (no spaces). The "/" prefix is added automatically.</small>
+            </article>
+          </div>
+        </section>
+
+        <section class="form-section">
+          <div class="section-header">
             <span class="section-tag" data-i18n="step3">Step 3</span>
             <div>
               <h2 data-i18n="step3Title">Platform preferences</h2>

@@ -370,5 +370,57 @@
   "statusTestSuccess": {
     "message": "Conexão API bem-sucedida!",
     "description": "Test success message"
+  },
+  "stepSlash": {
+    "message": "Comandos rápidos",
+    "description": "Short label for slash commands section"
+  },
+  "stepSlashTitle": {
+    "message": "Comandos rápidos",
+    "description": "Title for slash commands section"
+  },
+  "stepSlashDesc": {
+    "message": "Crie comandos com barra para prompts rápidos. Digite / no chat para usá-los.",
+    "description": "Description for slash commands section"
+  },
+  "cardSlashTitle": {
+    "message": "Comandos com barra",
+    "description": "Card title for slash commands list"
+  },
+  "btnAddCommand": {
+    "message": "Adicionar comando",
+    "description": "Button to add a new slash command"
+  },
+  "helpSlash": {
+    "message": "Os comandos devem ser alfanuméricos (sem espaços). O prefixo '/' é adicionado automaticamente.",
+    "description": "Help text for slash commands"
+  },
+  "placeholderCommand": {
+    "message": "comando",
+    "description": "Placeholder for slash command name"
+  },
+  "placeholderPrompt": {
+    "message": "Digite o prompt que será enviado quando este comando for usado...",
+    "description": "Placeholder for slash command prompt"
+  },
+  "emptySlash": {
+    "message": "Ainda não há comandos. Clique em \"Adicionar comando\" para criar um.",
+    "description": "Message shown when no slash commands are configured"
+  },
+  "errorMaxSlash": {
+    "message": "Máximo de 10 comandos permitidos",
+    "description": "Error message when limit is reached"
+  },
+  "placeholderThinking": {
+    "message": "Pensando...",
+    "description": "Placeholder when AI is processing"
+  },
+  "placeholderFollowUp": {
+    "message": "Faça uma pergunta de acompanhamento...",
+    "description": "Placeholder for follow-up questions"
+  },
+  "emptyDropdown": {
+    "message": "Nenhum comando encontrado. Configure nas opções da extensão.",
+    "description": "Message shown in dropdown when no commands match"
   }
 }

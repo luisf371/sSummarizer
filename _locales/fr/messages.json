@@ -370,5 +370,57 @@
   "statusTestSuccess": {
     "message": "Connexion API réussie !",
     "description": "Test success message"
+  },
+  "stepSlash": {
+    "message": "Commandes rapides",
+    "description": "Short label for slash commands section"
+  },
+  "stepSlashTitle": {
+    "message": "Commandes rapides",
+    "description": "Title for slash commands section"
+  },
+  "stepSlashDesc": {
+    "message": "Créez des commandes slash pour des invites rapides. Tapez / dans le chat pour les utiliser.",
+    "description": "Description for slash commands section"
+  },
+  "cardSlashTitle": {
+    "message": "Commandes slash",
+    "description": "Card title for slash commands list"
+  },
+  "btnAddCommand": {
+    "message": "Ajouter une commande",
+    "description": "Button to add a new slash command"
+  },
+  "helpSlash": {
+    "message": "Les commandes doivent être alphanumériques (sans espaces). Le préfixe '/' est ajouté automatiquement.",
+    "description": "Help text for slash commands"
+  },
+  "placeholderCommand": {
+    "message": "commande",
+    "description": "Placeholder for slash command name"
+  },
+  "placeholderPrompt": {
+    "message": "Saisissez l’invite qui sera envoyée lorsque cette commande est utilisée...",
+    "description": "Placeholder for slash command prompt"
+  },
+  "emptySlash": {
+    "message": "Aucune commande pour l’instant. Cliquez sur « Ajouter une commande » pour en créer une.",
+    "description": "Message shown when no slash commands are configured"
+  },
+  "errorMaxSlash": {
+    "message": "Maximum de 10 commandes autorisées",
+    "description": "Error message when limit is reached"
+  },
+  "placeholderThinking": {
+    "message": "Réflexion...",
+    "description": "Placeholder when AI is processing"
+  },
+  "placeholderFollowUp": {
+    "message": "Posez une question de suivi...",
+    "description": "Placeholder for follow-up questions"
+  },
+  "emptyDropdown": {
+    "message": "Aucune commande trouvée. Configurez-les dans les options de l’extension.",
+    "description": "Message shown in dropdown when no commands match"
   }
 }

@@ -370,5 +370,57 @@
   "statusTestSuccess": {
     "message": "¡Conexión API exitosa!",
     "description": "Test success message"
+  },
+  "stepSlash": {
+    "message": "Comandos rápidos",
+    "description": "Short label for slash commands section"
+  },
+  "stepSlashTitle": {
+    "message": "Comandos rápidos",
+    "description": "Title for slash commands section"
+  },
+  "stepSlashDesc": {
+    "message": "Crea comandos con barra para prompts rápidos. Escribe / en el chat para usarlos.",
+    "description": "Description for slash commands section"
+  },
+  "cardSlashTitle": {
+    "message": "Comandos con barra",
+    "description": "Card title for slash commands list"
+  },
+  "btnAddCommand": {
+    "message": "Agregar comando",
+    "description": "Button to add a new slash command"
+  },
+  "helpSlash": {
+    "message": "Los comandos deben ser alfanuméricos (sin espacios). El prefijo '/' se agrega automáticamente.",
+    "description": "Help text for slash commands"
+  },
+  "placeholderCommand": {
+    "message": "comando",
+    "description": "Placeholder for slash command name"
+  },
+  "placeholderPrompt": {
+    "message": "Introduce el prompt que se enviará cuando se use este comando...",
+    "description": "Placeholder for slash command prompt"
+  },
+  "emptySlash": {
+    "message": "Aún no hay comandos. Haz clic en \"Agregar comando\" para crear uno.",
+    "description": "Message shown when no slash commands are configured"
+  },
+  "errorMaxSlash": {
+    "message": "Se permite un máximo de 10 comandos",
+    "description": "Error message when limit is reached"
+  },
+  "placeholderThinking": {
+    "message": "Pensando...",
+    "description": "Placeholder when AI is processing"
+  },
+  "placeholderFollowUp": {
+    "message": "Haz una pregunta de seguimiento...",
+    "description": "Placeholder for follow-up questions"
+  },
+  "emptyDropdown": {
+    "message": "No se encontraron comandos. Configúralos en las opciones de la extensión.",
+    "description": "Message shown in dropdown when no commands match"
   }
 }

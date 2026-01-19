@@ -188,7 +188,7 @@
     "description": "Context menu label"
   },
   "helpContextMenu": {
-    "message": "当选中文本时，在浏览器右键菜单中添加"总结选中内容"选项。",
+    "message": "当选中文本时，在浏览器右键菜单中添加「总结选中内容」选项。",
     "description": "Context menu help"
   },
   "badgeYouTube": {
@@ -284,7 +284,7 @@
     "description": "New sort option"
   },
   "helpSortComments": {
-    "message": ""当前"保持页面上可见的内容。其他模式会静默获取排序后的帖子。",
+    "message": "「当前」保持页面上可见的内容。其他模式会静默获取排序后的帖子。",
     "description": "Sort comments help"
   },
   "step4": {
@@ -370,5 +370,57 @@
   "statusTestSuccess": {
     "message": "API连接成功！",
     "description": "Test success message"
+  },
+  "stepSlash": {
+    "message": "快捷命令",
+    "description": "Short label for slash commands section"
+  },
+  "stepSlashTitle": {
+    "message": "快捷命令",
+    "description": "Title for slash commands section"
+  },
+  "stepSlashDesc": {
+    "message": "创建斜杠命令以快速发送提示。在聊天中输入 / 即可使用。",
+    "description": "Description for slash commands section"
+  },
+  "cardSlashTitle": {
+    "message": "斜杠命令",
+    "description": "Card title for slash commands list"
+  },
+  "btnAddCommand": {
+    "message": "添加命令",
+    "description": "Button to add a new slash command"
+  },
+  "helpSlash": {
+    "message": "命令只能包含字母和数字（不含空格）。会自动添加「/」前缀。",
+    "description": "Help text for slash commands"
+  },
+  "placeholderCommand": {
+    "message": "命令",
+    "description": "Placeholder for slash command name"
+  },
+  "placeholderPrompt": {
+    "message": "输入使用此命令时将发送的提示...",
+    "description": "Placeholder for slash command prompt"
+  },
+  "emptySlash": {
+    "message": "还没有命令。点击「添加命令」创建一个。",
+    "description": "Message shown when no slash commands are configured"
+  },
+  "errorMaxSlash": {
+    "message": "最多允许 10 个命令",
+    "description": "Error message when limit is reached"
+  },
+  "placeholderThinking": {
+    "message": "思考中...",
+    "description": "Placeholder when AI is processing"
+  },
+  "placeholderFollowUp": {
+    "message": "提出后续问题...",
+    "description": "Placeholder for follow-up questions"
+  },
+  "emptyDropdown": {
+    "message": "未找到命令。请在扩展程序选项中配置。",
+    "description": "Message shown in dropdown when no commands match"
   }
 }

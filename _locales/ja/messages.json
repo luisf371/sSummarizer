@@ -370,5 +370,57 @@
   "statusTestSuccess": {
     "message": "API接続成功！",
     "description": "Test success message"
+  },
+  "stepSlash": {
+    "message": "クイックコマンド",
+    "description": "Short label for slash commands section"
+  },
+  "stepSlashTitle": {
+    "message": "クイックコマンド",
+    "description": "Title for slash commands section"
+  },
+  "stepSlashDesc": {
+    "message": "素早く使えるプロンプト用のスラッシュコマンドを作成します。チャットで / を入力して使用できます。",
+    "description": "Description for slash commands section"
+  },
+  "cardSlashTitle": {
+    "message": "スラッシュコマンド",
+    "description": "Card title for slash commands list"
+  },
+  "btnAddCommand": {
+    "message": "コマンドを追加",
+    "description": "Button to add a new slash command"
+  },
+  "helpSlash": {
+    "message": "コマンド名は英数字のみ（スペース不可）。先頭の「/」は自動で付与されます。",
+    "description": "Help text for slash commands"
+  },
+  "placeholderCommand": {
+    "message": "コマンド",
+    "description": "Placeholder for slash command name"
+  },
+  "placeholderPrompt": {
+    "message": "このコマンドを使用したときに送信されるプロンプトを入力...",
+    "description": "Placeholder for slash command prompt"
+  },
+  "emptySlash": {
+    "message": "まだコマンドはありません。「コマンドを追加」をクリックして作成します。",
+    "description": "Message shown when no slash commands are configured"
+  },
+  "errorMaxSlash": {
+    "message": "コマンドは最大 10 個までです",
+    "description": "Error message when limit is reached"
+  },
+  "placeholderThinking": {
+    "message": "考え中...",
+    "description": "Placeholder when AI is processing"
+  },
+  "placeholderFollowUp": {
+    "message": "追加の質問をする...",
+    "description": "Placeholder for follow-up questions"
+  },
+  "emptyDropdown": {
+    "message": "コマンドが見つかりません。拡張機能のオプションで設定してください。",
+    "description": "Message shown in dropdown when no commands match"
   }
 }

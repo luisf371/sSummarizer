@@ -183,6 +183,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
   loadSavedOptions();
   setupFormListeners();
+  setupSlashCommands();
 
   optionsForm.addEventListener('submit', handleFormSubmit);
   
@@ -729,6 +730,158 @@ If and ONLY if timestamps are provided;
       } finally {
         testButton.disabled = false;
         testButton.textContent = 'Test Connection';
+      }
+    });
+  }
+
+  const MAX_SLASH_COMMANDS = 10;
+  let slashCommands = [];
+
+  function setupSlashCommands() {
+    const addBtn = document.getElementById('add-command-btn');
+    const listContainer = document.getElementById('slash-commands-list');
+    
+    if (!addBtn || !listContainer) return;
+    
+    chrome.storage.sync.get(['slashCommands'], (result) => {
+      slashCommands = result.slashCommands || [];
+      renderSlashCommands();
+    });
+    
+    addBtn.addEventListener('click', () => {
+      if (slashCommands.length >= MAX_SLASH_COMMANDS) {
+        showToast(chrome.i18n.getMessage('errorMaxSlash') || 'Maximum 10 commands allowed', 'error');
+        return;
+      }
+      
+      const newCommand = {
+        id: Date.now().toString(),
+        command: '',
+        prompt: ''
+      };
+      slashCommands.push(newCommand);
+      renderSlashCommands();
+      
+      const newEntry = listContainer.querySelector(`[data-id="${newCommand.id}"] .command-name-input`);
+      if (newEntry) newEntry.focus();
+    });
+  }
+
+  function renderSlashCommands() {
+    const listContainer = document.getElementById('slash-commands-list');
+    const countSpan = document.getElementById('command-count');
+    const addBtn = document.getElementById('add-command-btn');
+    
+    if (!listContainer) return;
+    
+    listContainer.innerHTML = '';
+    
+    if (slashCommands.length === 0) {
+      listContainer.innerHTML = `<div class="empty-commands-message">${chrome.i18n.getMessage('emptySlash') || 'No commands yet. Click "Add Command" to create one.'}</div>`;
+    } else {
+      slashCommands.forEach((cmd, index) => {
+        const entry = createCommandEntry(cmd, index);
+        listContainer.appendChild(entry);
+      });
+    }
+    
+    if (countSpan) countSpan.textContent = slashCommands.length;
+    if (addBtn) addBtn.disabled = slashCommands.length >= MAX_SLASH_COMMANDS;
+  }
+
+  function createCommandEntry(cmd, index) {
+    const entry = document.createElement('div');
+    entry.className = 'slash-command-entry';
+    entry.dataset.id = cmd.id;
+    
+    const nameWrapper = document.createElement('div');
+    nameWrapper.className = 'command-name-wrapper';
+    
+    const prefix = document.createElement('span');
+    prefix.className = 'command-prefix';
+    prefix.textContent = '/';
+    
+    const nameInput = document.createElement('input');
+    nameInput.type = 'text';
+    nameInput.className = 'command-name-input';
+    nameInput.placeholder = chrome.i18n.getMessage('placeholderCommand') || 'command';
+    nameInput.value = cmd.command;
+    nameInput.maxLength = 20;
+    nameInput.addEventListener('input', (e) => {
+      const sanitized = e.target.value.toLowerCase().replace(/[^a-z0-9]/g, '');
+      e.target.value = sanitized;
+      slashCommands[index].command = sanitized;
+      validateCommandName(nameInput, index);
+      saveSlashCommands();
+    });
+    nameInput.addEventListener('blur', () => validateCommandName(nameInput, index));
+    
+    nameWrapper.appendChild(prefix);
+    nameWrapper.appendChild(nameInput);
+    
+    const promptInput = document.createElement('textarea');
+    promptInput.className = 'command-prompt-input';
+    promptInput.placeholder = chrome.i18n.getMessage('placeholderPrompt') || 'Enter the prompt that will be sent when this command is used...';
+    promptInput.value = cmd.prompt;
+    promptInput.addEventListener('input', (e) => {
+      slashCommands[index].prompt = e.target.value;
+      validateCommandPrompt(promptInput);
+      saveSlashCommands();
+    });
+    promptInput.addEventListener('blur', () => validateCommandPrompt(promptInput));
+    
+    const deleteBtn = document.createElement('button');
+    deleteBtn.type = 'button';
+    deleteBtn.className = 'delete-command-btn';
+    deleteBtn.title = 'Delete command';
+    deleteBtn.innerHTML = '×';
+    deleteBtn.addEventListener('click', () => {
+      slashCommands = slashCommands.filter(c => c.id !== cmd.id);
+      saveSlashCommands();
+      renderSlashCommands();
+    });
+    
+    entry.appendChild(nameWrapper);
+    entry.appendChild(promptInput);
+    entry.appendChild(deleteBtn);
+    
+    return entry;
+  }
+
+  function validateCommandName(input, currentIndex) {
+    const value = input.value.trim();
+    let isValid = true;
+    
+    if (!value) {
+      isValid = false;
+    } else {
+      const duplicate = slashCommands.some((cmd, idx) => 
+        idx !== currentIndex && cmd.command.toLowerCase() === value.toLowerCase()
+      );
+      if (duplicate) isValid = false;
+    }
+    
+    input.classList.toggle('invalid', !isValid && value !== '');
+    return isValid;
+  }
+
+  function validateCommandPrompt(input) {
+    const value = input.value.trim();
+    const isValid = value.length > 0;
+    input.classList.toggle('invalid', !isValid && input.value !== '');
+    return isValid;
+  }
+
+  function saveSlashCommands() {
+    const validCommands = slashCommands.filter(cmd => 
+      cmd.command.trim() && cmd.prompt.trim()
+    );
+    
+    chrome.storage.sync.set({ slashCommands: validCommands }, () => {
+      if (chrome.runtime.lastError) {
+        console.error('[Options] Error saving slash commands:', chrome.runtime.lastError);
+      } else {
+        console.log('[Options] Slash commands saved:', validCommands.length);
       }
     });
   }

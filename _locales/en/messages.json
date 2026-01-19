@@ -370,5 +370,57 @@
   "statusTestSuccess": {
     "message": "API connection successful!",
     "description": "Test success message"
+  },
+  "stepSlash": {
+    "message": "Quick Commands",
+    "description": "Short label for slash commands section"
+  },
+  "stepSlashTitle": {
+    "message": "Quick Commands",
+    "description": "Title for slash commands section"
+  },
+  "stepSlashDesc": {
+    "message": "Create slash commands for quick prompts. Type / in the chat to use them.",
+    "description": "Description for slash commands section"
+  },
+  "cardSlashTitle": {
+    "message": "Slash Commands",
+    "description": "Card title for slash commands list"
+  },
+  "btnAddCommand": {
+    "message": "Add Command",
+    "description": "Button to add a new slash command"
+  },
+  "helpSlash": {
+    "message": "Commands must be alphanumeric (no spaces). The '/' prefix is added automatically.",
+    "description": "Help text for slash commands"
+  },
+  "placeholderCommand": {
+    "message": "command",
+    "description": "Placeholder for slash command name"
+  },
+  "placeholderPrompt": {
+    "message": "Enter the prompt that will be sent when this command is used...",
+    "description": "Placeholder for slash command prompt"
+  },
+  "emptySlash": {
+    "message": "No commands yet. Click 'Add Command' to create one.",
+    "description": "Message shown when no slash commands are configured"
+  },
+  "errorMaxSlash": {
+    "message": "Maximum 10 commands allowed",
+    "description": "Error message when limit is reached"
+  },
+  "placeholderThinking": {
+    "message": "Thinking...",
+    "description": "Placeholder when AI is processing"
+  },
+  "placeholderFollowUp": {
+    "message": "Ask a follow-up...",
+    "description": "Placeholder for follow-up questions"
+  },
+  "emptyDropdown": {
+    "message": "No commands found. Configure in extension options.",
+    "description": "Message shown in dropdown when no commands match"
   }
 }
