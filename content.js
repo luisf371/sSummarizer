@@ -10,14 +10,15 @@ let windowPositions = new Map();
 let windowSizes = new Map();
 let contentBuffers = new Map();
 let userScrolledUp = new Map();
+let isContentUpdating = new Map(); // Flag to ignore scroll events during content updates
 let chatHistories = new Map();
 let isChatProcessing = new Map();
 let slashCommandsCache = new Map();
 let selectedSlashCommand = new Map();
 let dropdownSelectedIndex = new Map();
 
- // Configuration constants
- const UI_CONFIG = {
+// Configuration constants
+const UI_CONFIG = {
   DEFAULT_FONT_SIZE: 14,
   MIN_FONT_SIZE: 8,
   MAX_FONT_SIZE: 24,
@@ -90,10 +91,10 @@ async function createFloatingWindow(uniqueId) {
       position.left = null;
     } else {
       position = { top: state.top, left: state.left };
-      
+
       // If right is not saved and left is null, default to right: 20
       if (position.left === null) {
-          position.right = 20;
+        position.right = 20;
       }
     }
 
@@ -106,7 +107,7 @@ async function createFloatingWindow(uniqueId) {
     // We don't set position: fixed on host to avoid creating a new stacking context 
     // that might interfere with child's fixed positioning relative to viewport,
     // unless strictly necessary. But 'all: initial' resets position to static.
-    
+
     // Attach Shadow DOM
     const shadow = host.attachShadow({ mode: 'open' });
 
@@ -125,10 +126,13 @@ async function createFloatingWindow(uniqueId) {
             <button id="close-btn-${uniqueId}" style="background: none; border: none; color: #f0f0f0; cursor: pointer; padding: 4px 8px; border-radius: 4px; transition: background-color 0.2s;" title="Close">×</button>
           </div>
         </div>
-        <div id="content-${uniqueId}" style="flex-grow: 1; overflow-y: auto; padding: 16px; font-size: ${initialFontSize}px; background-color: #1e1e1e; color: #cfcfcf; position: relative; line-height: 1.5; word-wrap: break-word;">
-          <div id="loading-overlay-${uniqueId}" style="display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.7); display: flex; justify-content: center; align-items: center; border-radius: 0 0 8px 8px; z-index: 10;">
-            <div class="spinner" style="border: 3px solid rgba(255,255,255,0.1); border-left-color: #4a9eff; border-radius: 50%; width: 32px; height: 32px; animation: spin 1s linear infinite;"></div>
+        <div id="content-wrapper-${uniqueId}" style="flex-grow: 1; position: relative; overflow: hidden;">
+          <div id="content-${uniqueId}" style="height: 100%; overflow-y: auto; padding: 16px; font-size: ${initialFontSize}px; background-color: #1e1e1e; color: #cfcfcf; line-height: 1.5; word-wrap: break-word;">
+            <div id="loading-overlay-${uniqueId}" style="display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.7); display: flex; justify-content: center; align-items: center; border-radius: 0 0 8px 8px; z-index: 10;">
+              <div class="spinner" style="border: 3px solid rgba(255,255,255,0.1); border-left-color: #4a9eff; border-radius: 50%; width: 32px; height: 32px; animation: spin 1s linear infinite;"></div>
+            </div>
           </div>
+          <button id="scroll-to-bottom-${uniqueId}" title="Scroll to bottom">↓</button>
         </div>
         
         <div id="chat-area-${uniqueId}" style="padding: 10px; border-top: 1px solid #333; background: #252525; display: flex; gap: 8px; align-items: center; border-radius: 0 0 8px 8px; position: relative;">
@@ -254,6 +258,35 @@ async function createFloatingWindow(uniqueId) {
         #floating-window-${uniqueId} #content-${uniqueId}::-webkit-scrollbar-thumb { background: #555; border-radius: 4px; }
         #floating-window-${uniqueId} #content-${uniqueId}::-webkit-scrollbar-thumb:hover { background: #666; }
         
+        /* Scroll to bottom button */
+        #floating-window-${uniqueId} #content-wrapper-${uniqueId} #scroll-to-bottom-${uniqueId} {
+          position: absolute;
+          bottom: 12px;
+          right: 12px;
+          background: rgba(74, 158, 255, 0.9);
+          border: none;
+          border-radius: 50%;
+          width: 32px;
+          height: 32px;
+          cursor: pointer;
+          display: none;
+          align-items: center;
+          justify-content: center;
+          color: white;
+          font-size: 16px;
+          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+          transition: opacity 0.2s, transform 0.2s;
+          z-index: 15;
+        }
+        #floating-window-${uniqueId} #content-wrapper-${uniqueId} #scroll-to-bottom-${uniqueId}:hover {
+          background: rgba(74, 158, 255, 1);
+          transform: scale(1.1);
+        }
+        #floating-window-${uniqueId} #content-wrapper-${uniqueId} #scroll-to-bottom-${uniqueId}.visible {
+          display: flex;
+        }
+
+        
         /* Markdown styling for dark theme */
         #floating-window-${uniqueId} h1 { color: #4a9eff; font-size: 1.5em; margin: 16px 0 8px 0; font-weight: 600; }
         #floating-window-${uniqueId} h2 { color: #4a9eff; font-size: 1.3em; margin: 14px 0 6px 0; font-weight: 600; }
@@ -307,15 +340,16 @@ async function createFloatingWindow(uniqueId) {
         }
       </style>
     `;
-    
+
     document.body.appendChild(host);
-    
+
     // Initialize state - Store ShadowRoot
     floatingWindows.set(uniqueId, shadow);
     isMinimized.set(uniqueId, false);
     textSizes.set(uniqueId, initialFontSize);
     windowPositions.set(uniqueId, position);
     userScrolledUp.set(uniqueId, false);
+    isContentUpdating.set(uniqueId, false);
     isChatProcessing.set(uniqueId, false);
     selectedSlashCommand.set(uniqueId, null);
     dropdownSelectedIndex.set(uniqueId, -1);
@@ -331,22 +365,39 @@ async function createFloatingWindow(uniqueId) {
     // Add scroll event listener to track user scrolling
     if (contentEl) {
       contentEl.addEventListener('scroll', () => {
-        // A threshold of 10px is used to account for layout shifts and inaccuracies.
-        const isScrolledToBottom = contentEl.scrollHeight - contentEl.clientHeight <= contentEl.scrollTop + 10;
+        // Skip scroll events triggered by content updates to prevent race conditions
+        if (isContentUpdating.get(uniqueId)) {
+          return;
+        }
+
+        // A threshold of 30px is used to account for layout shifts and inaccuracies
+        const isScrolledToBottom = contentEl.scrollHeight - contentEl.clientHeight <= contentEl.scrollTop + 30;
         userScrolledUp.set(uniqueId, !isScrolledToBottom);
+
+        // Update scroll-to-bottom button visibility
+        updateScrollButtonVisibility(uniqueId);
       });
     }
-    
+
+    // Setup scroll-to-bottom button
+    const scrollBtn = win.querySelector(`#scroll-to-bottom-${uniqueId}`);
+    if (scrollBtn) {
+      scrollBtn.addEventListener('click', () => {
+        scrollToBottomAndResume(uniqueId);
+      });
+    }
+
+
     // Add event listeners with error handling
     setupWindowEventListeners(uniqueId, win);
     setupChatListeners(uniqueId, win);
-    
+
     // Make window interactive
     makeDraggable(uniqueId, win, win.querySelector(`#title-bar-${uniqueId}`));
     makeResizable(win, win.querySelector(`#resize-handle-${uniqueId}`));
-    
+
     console.log(`[Content] Created floating window ${uniqueId} at position`, position);
-    
+
   } catch (error) {
     console.error('[Content] Error creating floating window:', error);
     // Clean up on error
@@ -403,11 +454,11 @@ function validateWindowState(state) {
 function calculateWindowPosition() {
   const existingWindows = Array.from(floatingWindows.values());
   const basePosition = { top: 20, right: 20 };
-  
+
   if (existingWindows.length === 0) {
     return basePosition;
   }
-  
+
   // Offset new windows to avoid complete overlap
   const offset = existingWindows.length * UI_CONFIG.POSITION_OFFSET;
   return {
@@ -425,7 +476,7 @@ function setupWindowEventListeners(uniqueId, win) {
     const minimizeBtn = win.querySelector(`#minimize-btn-${uniqueId}`);
     const increaseFontBtn = win.querySelector(`#increase-font-${uniqueId}`);
     const decreaseFontBtn = win.querySelector(`#decrease-font-${uniqueId}`);
-    
+
     const buttons = [closeBtn, minimizeBtn, increaseFontBtn, decreaseFontBtn];
     buttons.forEach(btn => {
       if (btn) {
@@ -433,23 +484,23 @@ function setupWindowEventListeners(uniqueId, win) {
         btn.addEventListener('pointerdown', (e) => e.stopPropagation());
       }
     });
-    
+
     if (closeBtn) {
       closeBtn.addEventListener('click', () => closeWindow(uniqueId));
     }
-    
+
     if (minimizeBtn) {
       minimizeBtn.addEventListener('click', () => toggleMinimize(uniqueId));
     }
-    
+
     if (increaseFontBtn) {
       increaseFontBtn.addEventListener('click', () => changeFontSize(uniqueId, 1));
     }
-    
+
     if (decreaseFontBtn) {
       decreaseFontBtn.addEventListener('click', () => changeFontSize(uniqueId, -1));
     }
-    
+
   } catch (error) {
     console.error('[Content] Error setting up event listeners:', error);
   }
@@ -471,7 +522,7 @@ function closeWindow(uniqueId) {
         console.log(`[Content] Stop request sent for ${uniqueId}`);
       }
     });
-    
+
     const win = floatingWindows.get(uniqueId); // ShadowRoot
     // win is ShadowRoot, access host to remove
     if (win && win.host) {
@@ -495,10 +546,58 @@ function cleanupWindowState(uniqueId) {
   windowSizes.delete(uniqueId);
   contentBuffers.delete(uniqueId);
   userScrolledUp.delete(uniqueId);
+  isContentUpdating.delete(uniqueId);
   slashCommandsCache.delete(uniqueId);
   selectedSlashCommand.delete(uniqueId);
   dropdownSelectedIndex.delete(uniqueId);
 }
+
+/**
+ * Update the visibility of the scroll-to-bottom button
+ */
+function updateScrollButtonVisibility(uniqueId) {
+  const win = floatingWindows.get(uniqueId);
+  if (!win) return;
+
+  const scrollBtn = win.querySelector(`#scroll-to-bottom-${uniqueId}`);
+  if (!scrollBtn) return;
+
+  const isScrolledUp = userScrolledUp.get(uniqueId);
+  if (isScrolledUp) {
+    scrollBtn.classList.add('visible');
+  } else {
+    scrollBtn.classList.remove('visible');
+  }
+}
+
+/**
+ * Scroll to bottom and resume auto-scroll
+ */
+function scrollToBottomAndResume(uniqueId) {
+  const win = floatingWindows.get(uniqueId);
+  if (!win) return;
+
+  const contentElement = win.querySelector(`#content-${uniqueId}`);
+  if (!contentElement) return;
+
+  // Set updating flag to prevent scroll listener from interfering
+  isContentUpdating.set(uniqueId, true);
+
+  // Reset user scroll state to enable auto-scroll
+  userScrolledUp.set(uniqueId, false);
+
+  // Scroll to bottom
+  contentElement.scrollTop = contentElement.scrollHeight;
+
+  // Hide the button
+  updateScrollButtonVisibility(uniqueId);
+
+  // Reset flag after a short delay
+  requestAnimationFrame(() => {
+    isContentUpdating.set(uniqueId, false);
+  });
+}
+
 
 /**
  * Change font size with validation and bounds checking
@@ -510,19 +609,19 @@ function changeFontSize(uniqueId, delta) {
       console.log(`[Content] Window ${uniqueId} already closed, skipping font size change`);
       return;
     }
-    
+
     const content = win.querySelector(`#content-${uniqueId}`);
     if (!content) {
       console.log(`[Content] Content element not found for window ${uniqueId} (window closed)`);
       return;
     }
-    
+
     const currentSize = textSizes.get(uniqueId) || UI_CONFIG.DEFAULT_FONT_SIZE;
     let newSize = currentSize + delta;
-    
+
     // Enforce bounds
     newSize = Math.max(UI_CONFIG.MIN_FONT_SIZE, Math.min(UI_CONFIG.MAX_FONT_SIZE, newSize));
-    
+
     if (newSize !== currentSize) {
       textSizes.set(uniqueId, newSize);
       content.style.fontSize = `${newSize}px`;
@@ -548,12 +647,12 @@ function toggleMinimize(uniqueId) {
     const content = win.querySelector(`#content-${uniqueId}`);
     const handle = win.querySelector(`#resize-handle-${uniqueId}`);
     const minimizeBtn = win.querySelector(`#minimize-btn-${uniqueId}`);
-    
+
     if (!content || !handle || !win) {
       console.log(`[Content] Required elements not found for window ${uniqueId} (window closed)`);
       return;
     }
-    
+
     const isCurrentlyMinimized = isMinimized.get(uniqueId) || false;
 
     if (isCurrentlyMinimized) {
@@ -561,7 +660,7 @@ function toggleMinimize(uniqueId) {
       const lastSize = windowSizes.get(uniqueId);
       content.style.display = ''; // Restore to default display
       handle.style.display = 'block';
-      if(lastSize) {
+      if (lastSize) {
         win.style.height = `${lastSize.height}px`;
       }
       if (minimizeBtn) minimizeBtn.textContent = '−';
@@ -595,7 +694,7 @@ function handleMessage(content, uniqueId) {
       console.log(`[Content] Window ${uniqueId} already closed, skipping message`);
       return;
     }
-    
+
     const contentElement = win.querySelector(`#content-${uniqueId}`);
     if (!contentElement) {
       console.log(`[Content] Content element not found for window ${uniqueId} (window closed)`);
@@ -605,32 +704,51 @@ function handleMessage(content, uniqueId) {
     let currentBuffer = contentBuffers.get(uniqueId) || '';
     currentBuffer += content;
     contentBuffers.set(uniqueId, currentBuffer);
-    
+
+    // Set flag to ignore scroll events during content update
+    isContentUpdating.set(uniqueId, true);
+
+    // Save scroll position before updating content (for users who scrolled up)
+    const savedScrollTop = contentElement.scrollTop;
+    const wasScrolledUp = userScrolledUp.get(uniqueId);
+
     // Sanitize and render the entire buffer
     contentElement.innerHTML = sanitizeContent(currentBuffer);
-    
-    // Auto-scroll to bottom
-    // Auto-scroll to bottom only if user hasn't scrolled up
-    if (!userScrolledUp.get(uniqueId)) {
+
+    // Handle scroll based on user state
+    if (!wasScrolledUp) {
+      // Auto-scroll to bottom
       requestAnimationFrame(() => {
         contentElement.scrollTop = contentElement.scrollHeight;
+        // Reset flag after scroll is applied
+        isContentUpdating.set(uniqueId, false);
+      });
+    } else {
+      // Restore previous scroll position to prevent text drift
+      requestAnimationFrame(() => {
+        contentElement.scrollTop = savedScrollTop;
+        isContentUpdating.set(uniqueId, false);
+        // Update button visibility when user is scrolled up
+        updateScrollButtonVisibility(uniqueId);
       });
     }
-    
+
+
     // Apply current font size
     const currentFontSize = textSizes.get(uniqueId) || UI_CONFIG.DEFAULT_FONT_SIZE;
     contentElement.style.fontSize = `${currentFontSize}px`;
-    
+
     // Auto-restore if minimized
     if (isMinimized.get(uniqueId)) {
       console.log(`[Content] Auto-restoring minimized window ${uniqueId}`);
       toggleMinimize(uniqueId);
     }
-    
+
   } catch (error) {
     console.error('[Content] Error handling message:', error);
   }
 }
+
 
 /**
  * Convert markdown to HTML and sanitize content
@@ -639,14 +757,14 @@ function sanitizeContent(content) {
   if (typeof content !== 'string') {
     return String(content || '');
   }
-  
+
   // Convert markdown to HTML
   let html = convertMarkdownToHtml(content);
-  
+
   // Allow basic formatting tags but escape potentially dangerous content
   const allowedTags = ['b', 'i', 'em', 'strong', 'br', 'p', 'div', 'span', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol', 'li', 'code', 'pre', 'blockquote', 'hr'];
   const tagRegex = /<(\/?)(\w+)([^>]*)>/gi;
-  
+
   return html.replace(tagRegex, (match, slash, tagName, attributes) => {
     if (allowedTags.includes(tagName.toLowerCase())) {
       // Remove any attributes for security, except for basic styling
@@ -658,122 +776,122 @@ function sanitizeContent(content) {
 }
 
 function getIndent(line) {
-    const match = line.match(/^(\s*)/);
-    return match ? match[1].length : 0;
+  const match = line.match(/^(\s*)/);
+  return match ? match[1].length : 0;
 }
 
 function convertMarkdownToHtml(markdown) {
-    const processInline = (text) => {
-        if (!text) return '';
-        return text
-            .replace(/\*\*\*(.*?)\*\*\*/g, '<strong><em>$1</em></strong>')
-            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-            .replace(/\*(.*?)\*/g, '<em>$1</em>')
-            .replace(/`([^`]+)`/g, '<code>$1</code>');
-    };
+  const processInline = (text) => {
+    if (!text) return '';
+    return text
+      .replace(/\*\*\*(.*?)\*\*\*/g, '<strong><em>$1</em></strong>')
+      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*(.*?)\*/g, '<em>$1</em>')
+      .replace(/`([^`]+)`/g, '<code>$1</code>');
+  };
 
-    const lines = markdown.trim().split('\n');
-    let html = '';
-    let i = 0;
+  const lines = markdown.trim().split('\n');
+  let html = '';
+  let i = 0;
 
-    while (i < lines.length) {
-        const line = lines[i];
+  while (i < lines.length) {
+    const line = lines[i];
 
-        // Headers (with support for YOU: prefix)
-        const headerMatch = line.match(/^(\s*(?:\*\*(?:YOU):\*\*\s*)?)(#{1,6})\s+(.*)$/);
-        if (headerMatch) {
-            const prefix = headerMatch[1];
-            const hashes = headerMatch[2];
-            const content = headerMatch[3];
-            const level = hashes.length;
-            
-            html += `<h${level}>${prefix ? processInline(prefix) : ''}${processInline(content)}</h${level}>\n`;
-            i++;
-            continue;
-        }
+    // Headers (with support for YOU: prefix)
+    const headerMatch = line.match(/^(\s*(?:\*\*(?:YOU):\*\*\s*)?)(#{1,6})\s+(.*)$/);
+    if (headerMatch) {
+      const prefix = headerMatch[1];
+      const hashes = headerMatch[2];
+      const content = headerMatch[3];
+      const level = hashes.length;
 
-        // Horizontal Rule
-        if (line.match(/^-{3,}$/)) {
-            html += '<hr>\n';
-            i++;
-            continue;
-        }
-
-        // Code blocks
-        if (line.startsWith('```')) {
-            let codeBlockContent = '';
-            i++;
-            while (i < lines.length && !lines[i].startsWith('```')) {
-                codeBlockContent += lines[i] + '\n';
-                i++;
-            }
-            html += `<pre><code>${escapeHtml(codeBlockContent.trim())}</code></pre>\n`;
-            i++; // Skip closing ```
-            continue;
-        }
-        
-        // Lists (with support for YOU: prefix)
-        const listMatch = line.match(/^(\s*(?:\*\*(?:YOU):\*\*\s*)?)([-*]|\d+\.)\s+(.*)$/);
-        if (listMatch) {
-            let listHtml = '';
-            const listStack = [];
-            
-            while (i < lines.length) {
-                const currentLine = lines[i];
-                const itemMatch = currentLine.match(/^(\s*(?:\*\*(?:YOU):\*\*\s*)?)([-*]|\d+\.)\s+(.*)$/);
-                
-                if (!itemMatch && !currentLine.match(/^\s+.*$/)) break;
-
-                if (itemMatch) {
-                    const prefix = itemMatch[1];
-                    const marker = itemMatch[2];
-                    let content = itemMatch[3];
-                    const indent = (prefix ? prefix.length : 0) + (itemMatch[1].match(/^\s*/) ? itemMatch[1].match(/^\s*/)[0].length : 0);
-                    const type = marker.match(/\d/) ? 'ol' : 'ul';
-
-                    // Look ahead for multi-line list items
-                    let nextIndex = i + 1;
-                    while (nextIndex < lines.length && lines[nextIndex].match(/^\s{2,}/) && !lines[nextIndex].match(/^(\s*(?:\*\*(?:YOU):\*\*\s*)?)([-*]|\d+\.)\s/)) {
-                        content += ' ' + lines[nextIndex].trim();
-                        nextIndex++;
-                    }
-
-                    while (listStack.length > 0 && indent < listStack[listStack.length - 1].indent) {
-                        listHtml += `</${listStack.pop().type}>\n`;
-                    }
-                    if (listStack.length === 0 || indent > listStack[listStack.length - 1].indent || type !== listStack[listStack.length - 1].type) {
-                       if(listStack.length > 0 && listStack[listStack.length-1].type !== type) {
-                           listHtml += `</${listStack.pop().type}>\n`;
-                       }
-                       listHtml += `<${type}>\n`;
-                       listStack.push({ type, indent });
-                    }
-                    listHtml += `<li>${prefix ? processInline(prefix) : ''}${processInline(content)}</li>\n`;
-                    i = nextIndex;
-                } else {
-                    i++;
-                }
-            }
-            while (listStack.length > 0) {
-                 listHtml += `</${listStack.pop().type}>\n`;
-            }
-            html += listHtml;
-            continue;
-        }
-        
-        // Paragraphs
-        if (line.trim()) {
-            let paragraphContent = line;
-            while (i + 1 < lines.length && lines[i + 1].trim() && !lines[i + 1].match(/^-{3,}$/) && !lines[i+1].match(/^#{1,6}\s/) && !lines[i+1].match(/^(\s*)([-*]|\d+\.)\s/)) {
-                paragraphContent += '<br>' + lines[i + 1];
-                i++;
-            }
-            html += `<p>${processInline(paragraphContent)}</p>\n`;
-        }
-        i++;
+      html += `<h${level}>${prefix ? processInline(prefix) : ''}${processInline(content)}</h${level}>\n`;
+      i++;
+      continue;
     }
 
-    return html.trim();
+    // Horizontal Rule
+    if (line.match(/^-{3,}$/)) {
+      html += '<hr>\n';
+      i++;
+      continue;
+    }
+
+    // Code blocks
+    if (line.startsWith('```')) {
+      let codeBlockContent = '';
+      i++;
+      while (i < lines.length && !lines[i].startsWith('```')) {
+        codeBlockContent += lines[i] + '\n';
+        i++;
+      }
+      html += `<pre><code>${escapeHtml(codeBlockContent.trim())}</code></pre>\n`;
+      i++; // Skip closing ```
+      continue;
+    }
+
+    // Lists (with support for YOU: prefix)
+    const listMatch = line.match(/^(\s*(?:\*\*(?:YOU):\*\*\s*)?)([-*]|\d+\.)\s+(.*)$/);
+    if (listMatch) {
+      let listHtml = '';
+      const listStack = [];
+
+      while (i < lines.length) {
+        const currentLine = lines[i];
+        const itemMatch = currentLine.match(/^(\s*(?:\*\*(?:YOU):\*\*\s*)?)([-*]|\d+\.)\s+(.*)$/);
+
+        if (!itemMatch && !currentLine.match(/^\s+.*$/)) break;
+
+        if (itemMatch) {
+          const prefix = itemMatch[1];
+          const marker = itemMatch[2];
+          let content = itemMatch[3];
+          const indent = (prefix ? prefix.length : 0) + (itemMatch[1].match(/^\s*/) ? itemMatch[1].match(/^\s*/)[0].length : 0);
+          const type = marker.match(/\d/) ? 'ol' : 'ul';
+
+          // Look ahead for multi-line list items
+          let nextIndex = i + 1;
+          while (nextIndex < lines.length && lines[nextIndex].match(/^\s{2,}/) && !lines[nextIndex].match(/^(\s*(?:\*\*(?:YOU):\*\*\s*)?)([-*]|\d+\.)\s/)) {
+            content += ' ' + lines[nextIndex].trim();
+            nextIndex++;
+          }
+
+          while (listStack.length > 0 && indent < listStack[listStack.length - 1].indent) {
+            listHtml += `</${listStack.pop().type}>\n`;
+          }
+          if (listStack.length === 0 || indent > listStack[listStack.length - 1].indent || type !== listStack[listStack.length - 1].type) {
+            if (listStack.length > 0 && listStack[listStack.length - 1].type !== type) {
+              listHtml += `</${listStack.pop().type}>\n`;
+            }
+            listHtml += `<${type}>\n`;
+            listStack.push({ type, indent });
+          }
+          listHtml += `<li>${prefix ? processInline(prefix) : ''}${processInline(content)}</li>\n`;
+          i = nextIndex;
+        } else {
+          i++;
+        }
+      }
+      while (listStack.length > 0) {
+        listHtml += `</${listStack.pop().type}>\n`;
+      }
+      html += listHtml;
+      continue;
+    }
+
+    // Paragraphs
+    if (line.trim()) {
+      let paragraphContent = line;
+      while (i + 1 < lines.length && lines[i + 1].trim() && !lines[i + 1].match(/^-{3,}$/) && !lines[i + 1].match(/^#{1,6}\s/) && !lines[i + 1].match(/^(\s*)([-*]|\d+\.)\s/)) {
+        paragraphContent += '<br>' + lines[i + 1];
+        i++;
+      }
+      html += `<p>${processInline(paragraphContent)}</p>\n`;
+    }
+    i++;
+  }
+
+  return html.trim();
 }
 
 /**
@@ -795,7 +913,7 @@ function showLoading(uniqueId) {
       console.log(`[Content] Window ${uniqueId} already closed, skipping loading display`);
       return;
     }
-    
+
     const loadingOverlay = win.querySelector(`#loading-overlay-${uniqueId}`);
     if (loadingOverlay) {
       loadingOverlay.style.display = 'flex';
@@ -816,7 +934,7 @@ function hideLoading(uniqueId) {
       console.log(`[Content] Window ${uniqueId} already closed, skipping loading hide`);
       return;
     }
-    
+
     const loadingOverlay = win.querySelector(`#loading-overlay-${uniqueId}`);
     if (loadingOverlay) {
       loadingOverlay.style.display = 'none';
@@ -827,84 +945,84 @@ function hideLoading(uniqueId) {
 }
 
 function makeDraggable(uniqueId, el, handle) {
-    let x0 = 0, y0 = 0, x1 = 0, y1 = 0;
-    handle.onpointerdown = e => { // Changed from onmousedown
-        e.preventDefault();
-        e.target.setPointerCapture(e.pointerId); // Capture pointer events
-        x1 = e.clientX; y1 = e.clientY;
-        
-        const drag = (e) => { // Defined drag function inside pointerdown for proper scope
-            e.preventDefault();
-            x0 = x1 - e.clientX; y0 = y1 - e.clientY;
-            x1 = e.clientX; y1 = e.clientY;
-            el.style.top = (el.offsetTop - y0) + 'px';
-            el.style.left = (el.offsetLeft - x0) + 'px';
-        };
+  let x0 = 0, y0 = 0, x1 = 0, y1 = 0;
+  handle.onpointerdown = e => { // Changed from onmousedown
+    e.preventDefault();
+    e.target.setPointerCapture(e.pointerId); // Capture pointer events
+    x1 = e.clientX; y1 = e.clientY;
 
-        const stopDrag = (e) => { // Defined stopDrag function
-            e.target.releasePointerCapture(e.pointerId); // Release pointer capture
-            window.removeEventListener('pointermove', drag);
-            window.removeEventListener('pointerup', stopDrag);
-
-            const isMin = isMinimized.get(uniqueId);
-            
-            let heightToSave = el.offsetHeight;
-            if (isMin && windowSizes.has(uniqueId)) {
-                // If minimized, use the stored full height instead of the current title-bar height
-                heightToSave = windowSizes.get(uniqueId).height;
-            }
-
-            chrome.storage.local.set({ windowState: { top: el.offsetTop, left: el.offsetLeft, width: el.offsetWidth, height: heightToSave } });
-        };
-
-        window.addEventListener('pointermove', drag);
-        window.addEventListener('pointerup', stopDrag, { once: true });
+    const drag = (e) => { // Defined drag function inside pointerdown for proper scope
+      e.preventDefault();
+      x0 = x1 - e.clientX; y0 = y1 - e.clientY;
+      x1 = e.clientX; y1 = e.clientY;
+      el.style.top = (el.offsetTop - y0) + 'px';
+      el.style.left = (el.offsetLeft - x0) + 'px';
     };
+
+    const stopDrag = (e) => { // Defined stopDrag function
+      e.target.releasePointerCapture(e.pointerId); // Release pointer capture
+      window.removeEventListener('pointermove', drag);
+      window.removeEventListener('pointerup', stopDrag);
+
+      const isMin = isMinimized.get(uniqueId);
+
+      let heightToSave = el.offsetHeight;
+      if (isMin && windowSizes.has(uniqueId)) {
+        // If minimized, use the stored full height instead of the current title-bar height
+        heightToSave = windowSizes.get(uniqueId).height;
+      }
+
+      chrome.storage.local.set({ windowState: { top: el.offsetTop, left: el.offsetLeft, width: el.offsetWidth, height: heightToSave } });
+    };
+
+    window.addEventListener('pointermove', drag);
+    window.addEventListener('pointerup', stopDrag, { once: true });
+  };
 }
 
 function makeResizable(el, handle) {
-    handle.onpointerdown = (e) => { // Changed from onmousedown
-        e.preventDefault();
-        e.target.setPointerCapture(e.pointerId); // Capture pointer events
+  handle.onpointerdown = (e) => { // Changed from onmousedown
+    e.preventDefault();
+    e.target.setPointerCapture(e.pointerId); // Capture pointer events
 
-        const resize = (e) => { // Defined resize function inside pointerdown
-            const newWidth = Math.max(UI_CONFIG.MIN_WIDTH, e.clientX - el.offsetLeft);
-            const newHeight = Math.max(UI_CONFIG.MIN_HEIGHT, e.clientY - el.offsetTop);
-            el.style.width = newWidth + 'px';
-            el.style.height = newHeight + 'px';
-        };
-        
-        const stopResize = (e) => { // Defined stopResize function
-            e.target.releasePointerCapture(e.pointerId); // Release pointer capture
-            window.removeEventListener('pointermove', resize);
-            window.removeEventListener('pointerup', stopResize);
-            chrome.storage.local.set({ windowState: { top: el.offsetTop, left: el.offsetLeft, width: el.offsetWidth, height: el.offsetHeight } });
-        };
-
-        window.addEventListener('pointermove', resize);
-        window.addEventListener('pointerup', stopResize, { once: true });
+    const resize = (e) => { // Defined resize function inside pointerdown
+      const newWidth = Math.max(UI_CONFIG.MIN_WIDTH, e.clientX - el.offsetLeft);
+      const newHeight = Math.max(UI_CONFIG.MIN_HEIGHT, e.clientY - el.offsetTop);
+      el.style.width = newWidth + 'px';
+      el.style.height = newHeight + 'px';
     };
+
+    const stopResize = (e) => { // Defined stopResize function
+      e.target.releasePointerCapture(e.pointerId); // Release pointer capture
+      window.removeEventListener('pointermove', resize);
+      window.removeEventListener('pointerup', stopResize);
+      chrome.storage.local.set({ windowState: { top: el.offsetTop, left: el.offsetLeft, width: el.offsetWidth, height: el.offsetHeight } });
+    };
+
+    window.addEventListener('pointermove', resize);
+    window.addEventListener('pointerup', stopResize, { once: true });
+  };
 }
 
 // ———— Chat Functionality ————
 
 function handleStreamEnd(request) {
   const { uniqueId, fullResponse, originalContext } = request;
-  
+
   // Initialize history if not present
   if (!chatHistories.has(uniqueId)) {
     chatHistories.set(uniqueId, []);
   }
   const history = chatHistories.get(uniqueId);
-  
+
   // If originalContext is provided (initial request), add it first
   if (originalContext && history.length === 0) {
     history.push({ role: 'user', content: originalContext });
   }
-  
+
   // Add the assistant's response
   history.push({ role: 'assistant', content: fullResponse });
-  
+
   const win = floatingWindows.get(uniqueId); // ShadowRoot
   if (win) {
     // Final auto-scroll check to ensure it ends at the bottom
@@ -914,294 +1032,294 @@ function handleStreamEnd(request) {
         contentElement.scrollTop = contentElement.scrollHeight;
       });
     }
-    
+
     // Enable chat input
     const input = win.querySelector(`#chat-input-${uniqueId}`);
     const btn = win.querySelector(`#chat-send-${uniqueId}`);
     if (input) {
-        input.disabled = false;
-        input.placeholder = chrome.i18n.getMessage('placeholderFollowUp') || "Ask a follow-up...";
+      input.disabled = false;
+      input.placeholder = chrome.i18n.getMessage('placeholderFollowUp') || "Ask a follow-up...";
     }
     if (btn) btn.disabled = false;
   }
-  
+
   isChatProcessing.set(uniqueId, false);
 }
 
 function setupChatListeners(uniqueId, win) {
-    const input = win.querySelector(`#chat-input-${uniqueId}`);
-    const sendBtn = win.querySelector(`#chat-send-${uniqueId}`);
-    const dropdown = win.querySelector(`#slash-dropdown-${uniqueId}`);
-    
-    const submit = () => {
-        const selected = selectedSlashCommand.get(uniqueId);
-        let textToSend = '';
-        
-        if (selected) {
-            textToSend = selected.prompt;
-        } else {
-            textToSend = input ? input.value.trim() : '';
-        }
-        
-        if (textToSend && !isChatProcessing.get(uniqueId)) {
-            sendFollowUp(uniqueId, textToSend);
-            const clearBtn = win.querySelector(`#clear-command-${uniqueId}`);
-            if (input) {
-                input.value = '';
-                input.classList.remove('command-locked');
-                input.readOnly = false;
-            }
-            if (clearBtn) {
-                clearBtn.style.display = 'none';
-            }
-            selectedSlashCommand.set(uniqueId, null);
-            hideSlashDropdown(uniqueId);
-        }
-    };
+  const input = win.querySelector(`#chat-input-${uniqueId}`);
+  const sendBtn = win.querySelector(`#chat-send-${uniqueId}`);
+  const dropdown = win.querySelector(`#slash-dropdown-${uniqueId}`);
 
-    const hideSlashDropdown = (id) => {
-        const dd = win.querySelector(`#slash-dropdown-${id}`);
-        if (dd) dd.style.display = 'none';
-        dropdownSelectedIndex.set(id, -1);
-    };
+  const submit = () => {
+    const selected = selectedSlashCommand.get(uniqueId);
+    let textToSend = '';
 
-    const showSlashDropdown = (id, filterText) => {
-        const dd = win.querySelector(`#slash-dropdown-${id}`);
-        if (!dd) return;
-        
-        const commands = slashCommandsCache.get(id) || [];
-        const filter = filterText.toLowerCase();
-        const filtered = commands.filter(cmd => 
-            cmd.command.toLowerCase().startsWith(filter)
-        );
-        
-        dd.innerHTML = '';
-        
-        if (filtered.length === 0) {
-            dd.innerHTML = `<div class="slash-empty">${chrome.i18n.getMessage('emptyDropdown') || 'No commands found. Configure in extension options.'}</div>`;
-        } else {
-            filtered.forEach((cmd, idx) => {
-                const item = document.createElement('div');
-                item.className = 'slash-item';
-                item.dataset.command = cmd.command;
-                item.dataset.index = idx;
-                item.textContent = '/' + cmd.command;
-                
-                item.addEventListener('click', () => {
-                    selectSlashCommand(id, cmd);
-                });
-                
-                dd.appendChild(item);
-            });
-        }
-        
-        dd.style.display = 'block';
-        dropdownSelectedIndex.set(id, -1);
-    };
+    if (selected) {
+      textToSend = selected.prompt;
+    } else {
+      textToSend = input ? input.value.trim() : '';
+    }
 
-    const selectSlashCommand = (id, cmd) => {
-        selectedSlashCommand.set(id, cmd);
-        const clearBtn = win.querySelector(`#clear-command-${id}`);
-        if (input) {
-            input.value = '/' + cmd.command;
-            input.classList.add('command-locked');
-            input.readOnly = true;
-        }
-        if (clearBtn) {
-            clearBtn.style.display = 'block';
-        }
-        hideSlashDropdown(id);
-    };
+    if (textToSend && !isChatProcessing.get(uniqueId)) {
+      sendFollowUp(uniqueId, textToSend);
+      const clearBtn = win.querySelector(`#clear-command-${uniqueId}`);
+      if (input) {
+        input.value = '';
+        input.classList.remove('command-locked');
+        input.readOnly = false;
+      }
+      if (clearBtn) {
+        clearBtn.style.display = 'none';
+      }
+      selectedSlashCommand.set(uniqueId, null);
+      hideSlashDropdown(uniqueId);
+    }
+  };
 
-    const unlockInput = (id) => {
-        selectedSlashCommand.set(id, null);
-        const clearBtn = win.querySelector(`#clear-command-${id}`);
-        if (input) {
-            input.value = '';
-            input.classList.remove('command-locked');
-            input.readOnly = false;
-            input.focus();
-        }
-        if (clearBtn) {
-            clearBtn.style.display = 'none';
-        }
-    };
+  const hideSlashDropdown = (id) => {
+    const dd = win.querySelector(`#slash-dropdown-${id}`);
+    if (dd) dd.style.display = 'none';
+    dropdownSelectedIndex.set(id, -1);
+  };
 
-    const updateDropdownSelection = (id, direction) => {
-        const dd = win.querySelector(`#slash-dropdown-${id}`);
-        if (!dd || dd.style.display === 'none') return;
-        
-        const items = dd.querySelectorAll('.slash-item');
-        if (items.length === 0) return;
-        
-        let currentIdx = dropdownSelectedIndex.get(id);
-        items.forEach(item => item.classList.remove('selected'));
-        
-        if (direction === 'down') {
-            currentIdx = currentIdx < items.length - 1 ? currentIdx + 1 : 0;
-        } else {
-            currentIdx = currentIdx > 0 ? currentIdx - 1 : items.length - 1;
-        }
-        
-        dropdownSelectedIndex.set(id, currentIdx);
-        items[currentIdx].classList.add('selected');
-        items[currentIdx].scrollIntoView({ block: 'nearest' });
-    };
+  const showSlashDropdown = (id, filterText) => {
+    const dd = win.querySelector(`#slash-dropdown-${id}`);
+    if (!dd) return;
 
-    const confirmDropdownSelection = (id) => {
-        const dd = win.querySelector(`#slash-dropdown-${id}`);
-        if (!dd || dd.style.display === 'none') return false;
-        
-        const idx = dropdownSelectedIndex.get(id);
-        if (idx >= 0) {
-            const items = dd.querySelectorAll('.slash-item');
-            if (items[idx]) {
-                const cmdName = items[idx].dataset.command;
-                const commands = slashCommandsCache.get(id) || [];
-                const cmd = commands.find(c => c.command === cmdName);
-                if (cmd) {
-                    selectSlashCommand(id, cmd);
-                    return true;
-                }
-            }
-        }
-        return false;
-    };
+    const commands = slashCommandsCache.get(id) || [];
+    const filter = filterText.toLowerCase();
+    const filtered = commands.filter(cmd =>
+      cmd.command.toLowerCase().startsWith(filter)
+    );
 
-    const checkExactMatch = (id, value) => {
-        if (!value.startsWith('/')) return;
-        const cmdName = value.substring(1).toLowerCase();
-        const commands = slashCommandsCache.get(id) || [];
-        const match = commands.find(c => c.command.toLowerCase() === cmdName);
-        if (match) {
-            selectSlashCommand(id, match);
-        }
-    };
+    dd.innerHTML = '';
 
+    if (filtered.length === 0) {
+      dd.innerHTML = `<div class="slash-empty">${chrome.i18n.getMessage('emptyDropdown') || 'No commands found. Configure in extension options.'}</div>`;
+    } else {
+      filtered.forEach((cmd, idx) => {
+        const item = document.createElement('div');
+        item.className = 'slash-item';
+        item.dataset.command = cmd.command;
+        item.dataset.index = idx;
+        item.textContent = '/' + cmd.command;
+
+        item.addEventListener('click', () => {
+          selectSlashCommand(id, cmd);
+        });
+
+        dd.appendChild(item);
+      });
+    }
+
+    dd.style.display = 'block';
+    dropdownSelectedIndex.set(id, -1);
+  };
+
+  const selectSlashCommand = (id, cmd) => {
+    selectedSlashCommand.set(id, cmd);
+    const clearBtn = win.querySelector(`#clear-command-${id}`);
     if (input) {
-        input.addEventListener('keydown', (e) => {
-            e.stopPropagation();
-            
-            const isLocked = selectedSlashCommand.get(uniqueId) !== null;
-            const dd = win.querySelector(`#slash-dropdown-${uniqueId}`);
-            const dropdownVisible = dd && dd.style.display !== 'none';
-            
-            if (isLocked && (e.key === 'Backspace' || e.key === 'Delete')) {
-                e.preventDefault();
-                unlockInput(uniqueId);
-                return;
-            }
-            
-            if (dropdownVisible) {
-                if (e.key === 'ArrowDown') {
-                    e.preventDefault();
-                    updateDropdownSelection(uniqueId, 'down');
-                    return;
-                }
-                if (e.key === 'ArrowUp') {
-                    e.preventDefault();
-                    updateDropdownSelection(uniqueId, 'up');
-                    return;
-                }
-                if (e.key === 'Enter') {
-                    e.preventDefault();
-                    if (confirmDropdownSelection(uniqueId)) {
-                        return;
-                    }
-                    submit();
-                    return;
-                }
-                if (e.key === 'Escape') {
-                    e.preventDefault();
-                    hideSlashDropdown(uniqueId);
-                    input.value = '';
-                    return;
-                }
-            } else {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    submit();
-                    return;
-                }
-            }
-        });
-        
-        input.addEventListener('input', (e) => {
-            const value = e.target.value;
-            
-            if (value.startsWith('/') && value.length >= 1) {
-                const filterText = value.substring(1);
-                showSlashDropdown(uniqueId, filterText);
-                
-                if (filterText.length > 0) {
-                    checkExactMatch(uniqueId, value);
-                }
-            } else {
-                hideSlashDropdown(uniqueId);
-            }
-        });
-        
-        input.addEventListener('keyup', (e) => e.stopPropagation());
-        input.addEventListener('keypress', (e) => e.stopPropagation());
-        
-        input.addEventListener('blur', () => {
-            setTimeout(() => hideSlashDropdown(uniqueId), 150);
-        });
+      input.value = '/' + cmd.command;
+      input.classList.add('command-locked');
+      input.readOnly = true;
     }
-    
-    if (sendBtn) {
-        sendBtn.addEventListener('click', submit);
-    }
-    
-    const clearBtn = win.querySelector(`#clear-command-${uniqueId}`);
     if (clearBtn) {
-        clearBtn.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            unlockInput(uniqueId);
-        });
+      clearBtn.style.display = 'block';
     }
+    hideSlashDropdown(id);
+  };
+
+  const unlockInput = (id) => {
+    selectedSlashCommand.set(id, null);
+    const clearBtn = win.querySelector(`#clear-command-${id}`);
+    if (input) {
+      input.value = '';
+      input.classList.remove('command-locked');
+      input.readOnly = false;
+      input.focus();
+    }
+    if (clearBtn) {
+      clearBtn.style.display = 'none';
+    }
+  };
+
+  const updateDropdownSelection = (id, direction) => {
+    const dd = win.querySelector(`#slash-dropdown-${id}`);
+    if (!dd || dd.style.display === 'none') return;
+
+    const items = dd.querySelectorAll('.slash-item');
+    if (items.length === 0) return;
+
+    let currentIdx = dropdownSelectedIndex.get(id);
+    items.forEach(item => item.classList.remove('selected'));
+
+    if (direction === 'down') {
+      currentIdx = currentIdx < items.length - 1 ? currentIdx + 1 : 0;
+    } else {
+      currentIdx = currentIdx > 0 ? currentIdx - 1 : items.length - 1;
+    }
+
+    dropdownSelectedIndex.set(id, currentIdx);
+    items[currentIdx].classList.add('selected');
+    items[currentIdx].scrollIntoView({ block: 'nearest' });
+  };
+
+  const confirmDropdownSelection = (id) => {
+    const dd = win.querySelector(`#slash-dropdown-${id}`);
+    if (!dd || dd.style.display === 'none') return false;
+
+    const idx = dropdownSelectedIndex.get(id);
+    if (idx >= 0) {
+      const items = dd.querySelectorAll('.slash-item');
+      if (items[idx]) {
+        const cmdName = items[idx].dataset.command;
+        const commands = slashCommandsCache.get(id) || [];
+        const cmd = commands.find(c => c.command === cmdName);
+        if (cmd) {
+          selectSlashCommand(id, cmd);
+          return true;
+        }
+      }
+    }
+    return false;
+  };
+
+  const checkExactMatch = (id, value) => {
+    if (!value.startsWith('/')) return;
+    const cmdName = value.substring(1).toLowerCase();
+    const commands = slashCommandsCache.get(id) || [];
+    const match = commands.find(c => c.command.toLowerCase() === cmdName);
+    if (match) {
+      selectSlashCommand(id, match);
+    }
+  };
+
+  if (input) {
+    input.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+
+      const isLocked = selectedSlashCommand.get(uniqueId) !== null;
+      const dd = win.querySelector(`#slash-dropdown-${uniqueId}`);
+      const dropdownVisible = dd && dd.style.display !== 'none';
+
+      if (isLocked && (e.key === 'Backspace' || e.key === 'Delete')) {
+        e.preventDefault();
+        unlockInput(uniqueId);
+        return;
+      }
+
+      if (dropdownVisible) {
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          updateDropdownSelection(uniqueId, 'down');
+          return;
+        }
+        if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          updateDropdownSelection(uniqueId, 'up');
+          return;
+        }
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          if (confirmDropdownSelection(uniqueId)) {
+            return;
+          }
+          submit();
+          return;
+        }
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          hideSlashDropdown(uniqueId);
+          input.value = '';
+          return;
+        }
+      } else {
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          submit();
+          return;
+        }
+      }
+    });
+
+    input.addEventListener('input', (e) => {
+      const value = e.target.value;
+
+      if (value.startsWith('/') && value.length >= 1) {
+        const filterText = value.substring(1);
+        showSlashDropdown(uniqueId, filterText);
+
+        if (filterText.length > 0) {
+          checkExactMatch(uniqueId, value);
+        }
+      } else {
+        hideSlashDropdown(uniqueId);
+      }
+    });
+
+    input.addEventListener('keyup', (e) => e.stopPropagation());
+    input.addEventListener('keypress', (e) => e.stopPropagation());
+
+    input.addEventListener('blur', () => {
+      setTimeout(() => hideSlashDropdown(uniqueId), 150);
+    });
+  }
+
+  if (sendBtn) {
+    sendBtn.addEventListener('click', submit);
+  }
+
+  const clearBtn = win.querySelector(`#clear-command-${uniqueId}`);
+  if (clearBtn) {
+    clearBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      unlockInput(uniqueId);
+    });
+  }
 }
 
 function sendFollowUp(uniqueId, question) {
-    isChatProcessing.set(uniqueId, true);
-    
-    // Disable input
-    const win = floatingWindows.get(uniqueId); // ShadowRoot
-    if (win) {
-        const input = win.querySelector(`#chat-input-${uniqueId}`);
-        const btn = win.querySelector(`#chat-send-${uniqueId}`);
-        if (input) {
-            input.disabled = true;
-            input.placeholder = chrome.i18n.getMessage('placeholderThinking') || "Thinking...";
-        }
-        if (btn) btn.disabled = true;
-        
-        // Format question - show /command for slash commands, otherwise text
-        const selected = selectedSlashCommand.get(uniqueId);
-        const displayQuestion = selected ? `/${selected.command}` : (question.startsWith('/') ? question.split('\n')[0] : question);
-        const formattedQuestion = `\n\n---\n**YOU:** ${displayQuestion}\n\n---\n`;
-        
-        // Render question immediately
-        handleMessage(formattedQuestion, uniqueId);
-    }
+  isChatProcessing.set(uniqueId, true);
 
-    // Update history
-    if (!chatHistories.has(uniqueId)) {
-        chatHistories.set(uniqueId, []);
+  // Disable input
+  const win = floatingWindows.get(uniqueId); // ShadowRoot
+  if (win) {
+    const input = win.querySelector(`#chat-input-${uniqueId}`);
+    const btn = win.querySelector(`#chat-send-${uniqueId}`);
+    if (input) {
+      input.disabled = true;
+      input.placeholder = chrome.i18n.getMessage('placeholderThinking') || "Thinking...";
     }
-    const history = chatHistories.get(uniqueId);
-    history.push({ role: 'user', content: question });
-        
-    // Send to background
-    chrome.runtime.sendMessage({
-        action: 'submitFollowUp',
-        uniqueId: uniqueId,
-        messages: history
-    }, (response) => {
-        if (chrome.runtime.lastError) {
-            console.error('Error sending follow-up:', chrome.runtime.lastError.message);
-            isChatProcessing.set(uniqueId, false);
-        }
-    });
+    if (btn) btn.disabled = true;
+
+    // Format question - show /command for slash commands, otherwise text
+    const selected = selectedSlashCommand.get(uniqueId);
+    const displayQuestion = selected ? `/${selected.command}` : (question.startsWith('/') ? question.split('\n')[0] : question);
+    const formattedQuestion = `\n\n---\n**YOU:** ${displayQuestion}\n\n---\n`;
+
+    // Render question immediately
+    handleMessage(formattedQuestion, uniqueId);
+  }
+
+  // Update history
+  if (!chatHistories.has(uniqueId)) {
+    chatHistories.set(uniqueId, []);
+  }
+  const history = chatHistories.get(uniqueId);
+  history.push({ role: 'user', content: question });
+
+  // Send to background
+  chrome.runtime.sendMessage({
+    action: 'submitFollowUp',
+    uniqueId: uniqueId,
+    messages: history
+  }, (response) => {
+    if (chrome.runtime.lastError) {
+      console.error('Error sending follow-up:', chrome.runtime.lastError.message);
+      isChatProcessing.set(uniqueId, false);
+    }
+  });
 }

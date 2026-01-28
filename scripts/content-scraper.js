@@ -105,13 +105,13 @@ async function getTranscriptViaInternalAPI(videoId) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36'
       },
       body: JSON.stringify({
         context: {
           client: {
             clientName: 'WEB',
-            clientVersion: '2.20231201.00.00'
+            clientVersion: '2.20260124.00.00'
           }
         },
         videoId: videoId
