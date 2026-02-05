@@ -4,7 +4,7 @@
 
 ![License](https://img.shields.io/badge/license-Proprietary-red)
 ![Language](https://img.shields.io/badge/language-JavaScript-yellow)
-![Version](https://img.shields.io/badge/version-1.12-blue)
+![Version](https://img.shields.io/badge/version-1.0.0-blue)
 
 🌍 **Supported Languages:** English, Spanish, French, Japanese, Portuguese (Brazilian), Chinese (Simplified)
 
