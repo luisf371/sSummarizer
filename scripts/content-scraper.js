@@ -77,7 +77,7 @@ async function getTranscriptViaInternalAPI(videoId) {
     const watchUrl = `https://www.youtube.com/watch?v=${videoId}`;
     const response = await fetch(watchUrl, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        'User-Agent': 'com.google.android.youtube/20.10.38 (Linux; U; Android 11) gzip'
       }
     });
     
@@ -105,13 +105,13 @@ async function getTranscriptViaInternalAPI(videoId) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36'
+        'User-Agent': 'com.google.android.youtube/20.10.38 (Linux; U; Android 11) gzip'
       },
       body: JSON.stringify({
         context: {
           client: {
-            clientName: 'WEB',
-            clientVersion: '2.20260124.00.00'
+            clientName: 'ANDROID',
+            clientVersion: '20.10.38'
           }
         },
         videoId: videoId
