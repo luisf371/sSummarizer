@@ -1,5 +1,7 @@
 .delete
 fork.md
+.sisyphus/
+plan_api_ignore/
 
 # === OS / System files ===
 .DS_Store

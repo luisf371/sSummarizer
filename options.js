@@ -96,7 +96,6 @@ document.addEventListener('DOMContentLoaded', function() {
   const apiProviderSelect = document.getElementById('api-provider');
   const modelInput = document.getElementById('model');
   const systemPromptInput = document.getElementById('system-prompt');
-  const enableStreamingInput = document.getElementById('enable-streaming');
   const includeTimestampsInput = document.getElementById('include-timestamps');
   const defaultFontSizeInput = document.getElementById('default-font-size');
   const subtitlePriorityInput = document.getElementById('subtitle-priority');
@@ -234,7 +233,6 @@ If and ONLY if timestamps are provided;
       model: modelInput.value.trim(),
       systemPrompt: systemPromptInput.value.trim(),
       timestampPrompt: timestampPromptInput.value.trim(),
-      enableStreaming: enableStreamingInput.checked,
       includeTimestamps: includeTimestampsInput.checked,
       defaultFontSize: parseInt(defaultFontSizeInput.value, 10) || 14,
       subtitlePriority: (subtitlePriorityInput?.value || 'auto'),
@@ -243,13 +241,14 @@ If and ONLY if timestamps are provided;
       redditDepth: parseInt(redditDepthInput?.value || 3, 10),
       redditSort: redditSortInput?.value || 'current',
       enableContextMenu: enableContextMenuInput?.checked || false,
-      enableDebugMode: enableDebugModeInput?.checked || false
+      enableDebugMode: enableDebugModeInput?.checked || false,
+      customFormat: document.getElementById('custom-format')?.value || ''
     };
   }
 
   function loadSavedOptions() {
     try {
-      chrome.storage.sync.get(['apiKey', 'apiUrl', 'apiProvider', 'model', 'systemPrompt', 'timestampPrompt', 'enableStreaming', 'includeTimestamps', 'defaultFontSize', 'subtitlePriority', 'preferredLanguage', 'redditMaxComments', 'redditDepth', 'redditSort', 'enableContextMenu', 'enableDebugMode'], function(result) {
+      chrome.storage.sync.get(['apiKey', 'apiUrl', 'apiProvider', 'model', 'systemPrompt', 'timestampPrompt', 'includeTimestamps', 'defaultFontSize', 'subtitlePriority', 'preferredLanguage', 'redditMaxComments', 'redditDepth', 'redditSort', 'enableContextMenu', 'enableDebugMode', 'customFormat'], function(result) {
         if (chrome.runtime.lastError) {
           showStatus('Error loading saved settings: ' + chrome.runtime.lastError.message, 'error');
           return;
@@ -263,11 +262,8 @@ If and ONLY if timestamps are provided;
         modelInput.value = result.model || '';
         systemPromptInput.value = result.systemPrompt || '';
         timestampPromptInput.value = result.timestampPrompt || DEFAULT_TIMESTAMP_PROMPT;
-        enableStreamingInput.checked = result.enableStreaming ?? true;
         includeTimestampsInput.checked = result.includeTimestamps ?? false;
         defaultFontSizeInput.value = result.defaultFontSize || 14;
-        //if (subtitlePriorityInput) subtitlePriorityInput.value = result.subtitlePriority || 'auto';
-        //if (preferredLanguageInput) preferredLanguageInput.value = result.preferredLanguage || 'en';
         subtitlePriorityInput.value = result.subtitlePriority || 'auto';
         preferredLanguageInput.value = result.preferredLanguage || 'en';
         if (redditMaxCommentsInput) redditMaxCommentsInput.value = result.redditMaxComments || 100;
@@ -275,6 +271,8 @@ If and ONLY if timestamps are provided;
         if (redditSortInput) redditSortInput.value = result.redditSort || 'current';
         if (enableContextMenuInput) enableContextMenuInput.checked = result.enableContextMenu ?? true;
         if (enableDebugModeInput) enableDebugModeInput.checked = result.enableDebugMode || false;
+        const customFormatSelect = document.getElementById('custom-format');
+        if (customFormatSelect) customFormatSelect.value = result.customFormat || '';
         applyProviderPreset({ shouldResetUrl: !result.apiUrl });
         systemPromptInput.dispatchEvent(new Event('input', { bubbles: true }));
         toggleTimestampPromptVisibility();
@@ -323,9 +321,20 @@ If and ONLY if timestamps are provided;
 
     function setupProviderSelector() {
       if (!apiProviderSelect || !apiUrlInput) return;
+      const customFormatContainer = document.getElementById('custom-format-container');
+      
+      function toggleCustomFormatVisibility() {
+        if (customFormatContainer) {
+          customFormatContainer.style.display = apiProviderSelect.value === 'custom' ? 'block' : 'none';
+        }
+      }
+      
       applyProviderPreset({ shouldResetUrl: !apiUrlInput.value });
+      toggleCustomFormatVisibility();
+      
       apiProviderSelect.addEventListener('change', () => {
         applyProviderPreset({ shouldResetUrl: true });
+        toggleCustomFormatVisibility();
       });
       apiUrlInput.addEventListener('blur', enforceProviderSuffix);
     }
@@ -512,7 +521,10 @@ If and ONLY if timestamps are provided;
 
       const isSystemPromptValid = validateSystemPrompt(currentValues.systemPrompt);
 
-  
+      if (currentValues.apiProvider === 'custom' && !currentValues.customFormat) {
+        showStatus('Please select a Custom Format when using Custom provider', 'error');
+        return;
+      }
 
       if (!isApiUrlValid || !isApiKeyValid || !isModelValid || !isSystemPromptValid) {
 

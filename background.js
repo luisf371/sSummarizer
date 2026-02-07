@@ -532,8 +532,8 @@ async function makeApiCall(inputData, uniqueId, customUserPrompt = null, command
     return;
   }
 
-  const { apiUrl, model, systemPrompt, timestampPrompt, apiKey, enableStreaming, enableDebugMode, includeTimestamps, apiProvider, customFormat } = await chrome.storage.sync.get(
-    ['apiUrl', 'model', 'systemPrompt', 'timestampPrompt', 'apiKey', 'enableStreaming', 'enableDebugMode', 'includeTimestamps', 'apiProvider', 'customFormat']
+  const { apiUrl, model, systemPrompt, timestampPrompt, apiKey, enableDebugMode, includeTimestamps, apiProvider, customFormat } = await chrome.storage.sync.get(
+    ['apiUrl', 'model', 'systemPrompt', 'timestampPrompt', 'apiKey', 'enableDebugMode', 'includeTimestamps', 'apiProvider', 'customFormat']
   );
   
   const adapter = getAdapter(apiProvider, customFormat);
@@ -646,7 +646,7 @@ async function makeApiCall(inputData, uniqueId, customUserPrompt = null, command
       return;
   }
   
-  console.log('[API] retrieved settings:', { apiUrl, model, systemPrompt, apiKey: !!apiKey, enableStreaming });
+  console.log('[API] retrieved settings:', { apiUrl, model, systemPrompt, apiKey: !!apiKey });
   
   // Validate configuration
   if (!apiUrl || !apiKey) {
@@ -675,9 +675,7 @@ async function makeApiCall(inputData, uniqueId, customUserPrompt = null, command
 
   try {
     const requestBody = adapter.transformRequest(messages, model, effectiveSystemPrompt);
-    if (enableStreaming !== false) {
-      requestBody.stream = true;
-    }
+    requestBody.stream = true;
 
     console.log('[API] ===== API REQUEST DEBUG =====');
     console.log('[API] Provider:', apiProvider || 'default');
@@ -693,7 +691,7 @@ async function makeApiCall(inputData, uniqueId, customUserPrompt = null, command
       fetchUrl = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:streamGenerateContent?key=${apiKey.trim()}`;
     }
 
-    console.log('[API] Making API Request, Streaming mode is:', enableStreaming);
+    console.log('[API] Making API Request (streaming mode)');
     const response = await fetch(fetchUrl, {
       method: 'POST',
       headers: adapter.buildHeaders(apiKey),
@@ -719,118 +717,88 @@ async function makeApiCall(inputData, uniqueId, customUserPrompt = null, command
       return;
     }
     
-    if (enableStreaming && response.body) {
-      console.log('[API] Processing stream...');
-      // Log the start of the stream processing
-      console.log('[API] Stream headers:', Object.fromEntries(response.headers.entries()));
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder('utf-8');
-      let buffer = '';
+    if (!response.body) {
+      throw new Error('Response body is not available for streaming');
+    }
+    
+    console.log('[API] Processing stream...');
+    // Log the start of the stream processing
+    console.log('[API] Stream headers:', Object.fromEntries(response.headers.entries()));
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    let buffer = '';
 
-      // Store the reader so we can cancel it if needed
-      const abortInfo = abortControllers.get(uniqueId);
-      if (abortInfo) {
-        abortInfo.reader = reader;
-      }
-      
-      // Only send initial empty string if it's the very first request (string input)
-      // Actually, for follow-ups we also want to confirm stream start?
-      // Existing logic sends empty string to 'appendToFloatingWindow'. 
-      // For follow-ups, this is fine, it just ensures the window is ready.
-      await sendMessageSafely(tab, {
-        action: 'appendToFloatingWindow',
-        content: ``,
-        uniqueId
-      });
+    // Store the reader so we can cancel it if needed
+    const abortInfo = abortControllers.get(uniqueId);
+    if (abortInfo) {
+      abortInfo.reader = reader;
+    }
+    
+    // Only send initial empty string if it's the very first request (string input)
+    // Actually, for follow-ups we also want to confirm stream start?
+    // Existing logic sends empty string to 'appendToFloatingWindow'. 
+    // For follow-ups, this is fine, it just ensures the window is ready.
+    await sendMessageSafely(tab, {
+      action: 'appendToFloatingWindow',
+      content: ``,
+      uniqueId
+    });
 
-      try {
-        while (true) {
-          // Check if request was aborted before reading next chunk
-          const currentAbortInfo = abortControllers.get(uniqueId);
-          if (!currentAbortInfo) {
-            console.log('[API] Request was aborted, stopping stream processing');
-            try {
-              reader.cancel();
-            } catch (e) {
-              console.log('[API] Reader already cancelled or closed');
-            }
-            break;
+    try {
+      while (true) {
+        // Check if request was aborted before reading next chunk
+        const currentAbortInfo = abortControllers.get(uniqueId);
+        if (!currentAbortInfo) {
+          console.log('[API] Request was aborted, stopping stream processing');
+          try {
+            reader.cancel();
+          } catch (e) {
+            console.log('[API] Reader already cancelled or closed');
           }
+          break;
+        }
 
-          const { done, value } = await reader.read();
-          if (done) {
-            console.log('[API] Stream finished');
-            if (buffer.length > 0) {
-              processBuffer(buffer, uniqueId);
-            }
-            
-            // Send stream end signal with full response and original context
-            const fullResponse = responseAccumulators.get(uniqueId);
-            await sendMessageSafely(tab, { 
-                action: 'streamEnd', 
-                uniqueId, 
-                fullResponse,
-                originalContext
-            });
-            
-            await sendMessageSafely(tab, { action: 'hideLoading', uniqueId });
-            abortControllers.delete(uniqueId);
-            cancelledRequests.delete(uniqueId);
-            // tabIdMap.delete(uniqueId); // Keep mapping for follow-ups
-            // responseAccumulators.delete(uniqueId); // Keep accumulator or reset? Better to keep until next request overrides it or window close
-            break;
+        const { done, value } = await reader.read();
+        if (done) {
+          console.log('[API] Stream finished');
+          if (buffer.length > 0) {
+            processBuffer(buffer, uniqueId, adapter);
           }
-          buffer += decoder.decode(value, { stream: true });
-          buffer = processBuffer(buffer, uniqueId);
+          
+          // Send stream end signal with full response and original context
+          const fullResponse = responseAccumulators.get(uniqueId);
+          await sendMessageSafely(tab, { 
+              action: 'streamEnd', 
+              uniqueId, 
+              fullResponse,
+              originalContext
+          });
+          
+          await sendMessageSafely(tab, { action: 'hideLoading', uniqueId });
+          abortControllers.delete(uniqueId);
+          cancelledRequests.delete(uniqueId);
+          // tabIdMap.delete(uniqueId); // Keep mapping for follow-ups
+          // responseAccumulators.delete(uniqueId); // Keep accumulator or reset? Better to keep until next request overrides it or window close
+          break;
         }
-      } catch (error) {
-        if (error.name === 'AbortError') {
-          console.log('[API] Stream reading aborted by user');
-        } else {
-          console.error('[API] Stream reading error:', error);
-        }
-        abortControllers.delete(uniqueId);
-        cancelledRequests.delete(uniqueId);
-        // Only clean up if it's a real error that breaks the session? 
-        // If stream just fails, user might retry. 
-        // But for now let's keep error behavior as is, but consider removing tabIdMap delete if we want to allow retry.
-        // For safety, on error we probably kill the session or handleApiError does it.
-        // handleApiError does delete it.
-        // For AbortError (user stop), we might want to keep it open?
-        // But stopApiRequest deletes it.
+        buffer += decoder.decode(value, { stream: true });
+        buffer = processBuffer(buffer, uniqueId, adapter);
       }
-    } else {
-      // Handle non-streaming response - can clean up immediately
-      abortControllers.delete(uniqueId);
-      const responseData = await response.json();
-      console.log('[API] Full response:', responseData);
-
-      if (responseData.choices?.[0]?.message?.content) {
-        const content = responseData.choices[0].message.content;
-        console.log('[API] Sending complete response, length:', content.length);
-        
-        await sendMessageSafely(tab, {
-          action: 'appendToFloatingWindow',
-          content: content,
-          uniqueId
-        });
-        
-        // Send streamEnd for consistency
-        await sendMessageSafely(tab, { 
-            action: 'streamEnd', 
-            uniqueId, 
-            fullResponse: content,
-            originalContext
-        });
-        
-        await sendMessageSafely(tab, { action: 'hideLoading', uniqueId });
-        cancelledRequests.delete(uniqueId);
-        // tabIdMap.delete(uniqueId); // Keep mapping for follow-ups
-        // responseAccumulators.delete(uniqueId);
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        console.log('[API] Stream reading aborted by user');
       } else {
-        console.error('[API] No content in response:', responseData);
-        throw new Error('No content received from API');
+        console.error('[API] Stream reading error:', error);
       }
+      abortControllers.delete(uniqueId);
+      cancelledRequests.delete(uniqueId);
+      // Only clean up if it's a real error that breaks the session? 
+      // If stream just fails, user might retry. 
+      // But for now let's keep error behavior as is, but consider removing tabIdMap delete if we want to allow retry.
+      // For safety, on error we probably kill the session or handleApiError does it.
+      // handleApiError does delete it.
+      // For AbortError (user stop), we might want to keep it open?
+      // But stopApiRequest deletes it.
     }
   } catch (err) {
     clearTimeout(timeoutId);
@@ -929,20 +897,17 @@ async function handleApiError(uniqueId, message) {
   // tabIdMap.delete(uniqueId); // Keep session open for retries
 }
 
-function processBuffer(buffer, uniqueId) {
-    // Check if request was aborted before processing buffer
+function processBuffer(buffer, uniqueId, adapter) {
     const abortInfo = abortControllers.get(uniqueId);
     if (!abortInfo) {
         console.log('[API] Request was aborted, skipping buffer processing for:', uniqueId);
         return '';
     }
 
-    // Process multiple data chunks in a single buffer
     const lines = buffer.split('\n');
-    buffer = lines.pop(); // Keep the last, possibly incomplete, line
+    buffer = lines.pop();
 
     for (const line of lines) {
-        // Check again in case abort happened during processing
         if (!abortControllers.get(uniqueId)) {
             console.log('[API] Request was aborted during buffer processing for:', uniqueId);
             return '';
@@ -950,29 +915,27 @@ function processBuffer(buffer, uniqueId) {
 
         if (line.trim().startsWith('data: ')) {
             const jsonLine = line.trim().substring(5).trim();
-            if (jsonLine === '[DONE]') {
-                console.log('[API] Stream DONE signal received.');
-                // Cleanup handled in makeApiCall after stream close
+            
+            if (adapter.isStreamEnd(jsonLine)) {
+                console.log('[API] Stream end signal received.');
                 continue;
             }
-            handleJsonLine(jsonLine, uniqueId);
+            handleJsonLine(jsonLine, uniqueId, adapter);
         }
     }
     return buffer;
 }
 
-function handleJsonLine(jsonLine, uniqueId) {
+function handleJsonLine(jsonLine, uniqueId, adapter) {
   try {
     if (!jsonLine) return;
     
-    // Check if request was aborted before processing
     const abortInfo = abortControllers.get(uniqueId);
     if (!abortInfo) {
       console.log('[API] Request was aborted, skipping JSON line processing for:', uniqueId);
       return;
     }
     
-    // console.log('[API] Processing JSON line:', jsonLine.substring(0, 200));
     const data = JSON.parse(jsonLine);
     const tab = tabIdMap.get(uniqueId);
     
@@ -981,47 +944,19 @@ function handleJsonLine(jsonLine, uniqueId) {
       return;
     }
     
-    let contentChunk = '';
+    const contentChunk = adapter.parseStreamChunk(data);
 
-    // Handle streaming content
-    if (data.choices?.[0]?.delta?.content) {
-      contentChunk = data.choices[0].delta.content;
-      // console.log('[API] Sending content chunk:', contentChunk.substring(0, 50));
-      chrome.tabs.sendMessage(tab, {
-        action: 'appendToFloatingWindow',
-        content: contentChunk,
-        uniqueId
-      }, (response) => {
-        if (chrome.runtime.lastError) {
-          // console.error('[API] Error sending content to tab:', chrome.runtime.lastError.message);
-        }
-      });
-    }
-    
-    // Handle non-streaming responses (some APIs return complete content at once in stream mode?)
-    if (data.choices?.[0]?.message?.content && !data.choices?.[0]?.delta) {
-      contentChunk = data.choices[0].message.content;
-      console.log('[API] Sending complete content:', contentChunk.substring(0, 50));
-      chrome.tabs.sendMessage(tab, {
-        action: 'appendToFloatingWindow',
-        content: contentChunk,
-        uniqueId
-      }, (response) => {
-        if (chrome.runtime.lastError) {
-          console.error('[API] Error sending complete content to tab:', chrome.runtime.lastError.message);
-        }
-      });
-    }
-
-    // Accumulate content
     if (contentChunk) {
-        const current = responseAccumulators.get(uniqueId) || '';
-        responseAccumulators.set(uniqueId, current + contentChunk);
-    }
-    
-    // Handle completion (finish_reason) - just log, cleanup in makeApiCall
-    if (data.choices?.[0]?.finish_reason === 'stop') {
-      // console.log('[API] Stream finished via stop reason');
+      chrome.tabs.sendMessage(tab, {
+        action: 'appendToFloatingWindow',
+        content: contentChunk,
+        uniqueId
+      }, () => {
+        void chrome.runtime.lastError;
+      });
+      
+      const current = responseAccumulators.get(uniqueId) || '';
+      responseAccumulators.set(uniqueId, current + contentChunk);
     }
     
   } catch (e) {
