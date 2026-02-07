@@ -67,6 +67,15 @@
                 </select>
                 <small class="help-text" data-i18n="helpProvider">Select a preset to auto-fill the recommended endpoint. OpenAI-compatible presets automatically append /completions. Choose Custom to supply different paths.</small>
               </div>
+              <div class="form-group" id="custom-format-container" style="display: none;">
+                <label for="custom-format" data-i18n="labelCustomFormat">Custom Format</label>
+                <select id="custom-format" name="custom-format">
+                  <option value="">Select format...</option>
+                  <option value="openai">OpenAI Compatible</option>
+                  <option value="anthropic">Anthropic Claude</option>
+                  <option value="gemini">Google Gemini</option>
+                </select>
+              </div>
               <div class="form-group">
                 <label for="api-url" class="required" data-i18n="labelApiUrl">OpenAI-Compatible API URL</label>
                 <input 
