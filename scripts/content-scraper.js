@@ -1,3 +1,4 @@
+// ===== YOUTUBE EXTRACTION =====
 // scripts/content-scraper.js
 
 /**
@@ -419,10 +420,12 @@ async function extractVideoDescription() {
   return null;
 }
 
+// ===== COMMON / GENERIC PAGE EXTRACTION =====
 function getPageContent() {
   return document.body.innerText;
 }
 
+// ===== REDDIT THREAD EXTRACTION =====
 // ————————————————————————————————————————————————————————————————————————————————
 // REDDIT EXTRACTOR
 // ————————————————————————————————————————————————————————————————————————————————
