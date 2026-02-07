@@ -436,11 +436,11 @@ async function extractRedditThread() {
 
   // Load user settings for limits and sort
   const { redditMaxComments, redditDepth, redditSort } = await new Promise(resolve =>
-    chrome.storage.sync.get({ redditMaxComments: 20, redditDepth: 1, redditSort: 'current' }, resolve)
+    chrome.storage.sync.get({ redditMaxComments: 100, redditDepth: 3, redditSort: 'current' }, resolve)
   );
   
-  const maxComments = parseInt(redditMaxComments) || 20;
-  const depthLimit = parseInt(redditDepth) !== undefined ? parseInt(redditDepth) : 1; 
+  const maxComments = parseInt(redditMaxComments) || 100;
+  const depthLimit = parseInt(redditDepth) !== undefined ? parseInt(redditDepth) : 3; 
   const sortType = redditSort || 'current';
 
   console.log('[Reddit Extractor] Settings:', { maxComments, depthLimit, sortType });

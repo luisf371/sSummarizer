@@ -239,8 +239,8 @@ If and ONLY if timestamps are provided;
       defaultFontSize: parseInt(defaultFontSizeInput.value, 10) || 14,
       subtitlePriority: (subtitlePriorityInput?.value || 'auto'),
       preferredLanguage: (preferredLanguageInput?.value || 'en').trim().toLowerCase(),
-      redditMaxComments: parseInt(redditMaxCommentsInput?.value || 20, 10),
-      redditDepth: parseInt(redditDepthInput?.value || 1, 10),
+      redditMaxComments: parseInt(redditMaxCommentsInput?.value || 100, 10),
+      redditDepth: parseInt(redditDepthInput?.value || 3, 10),
       redditSort: redditSortInput?.value || 'current',
       enableContextMenu: enableContextMenuInput?.checked || false,
       enableDebugMode: enableDebugModeInput?.checked || false
@@ -270,8 +270,8 @@ If and ONLY if timestamps are provided;
         //if (preferredLanguageInput) preferredLanguageInput.value = result.preferredLanguage || 'en';
         subtitlePriorityInput.value = result.subtitlePriority || 'auto';
         preferredLanguageInput.value = result.preferredLanguage || 'en';
-        if (redditMaxCommentsInput) redditMaxCommentsInput.value = result.redditMaxComments || 20;
-        if (redditDepthInput) redditDepthInput.value = result.redditDepth !== undefined ? result.redditDepth : 1;
+        if (redditMaxCommentsInput) redditMaxCommentsInput.value = result.redditMaxComments || 100;
+        if (redditDepthInput) redditDepthInput.value = result.redditDepth !== undefined ? result.redditDepth : 3;
         if (redditSortInput) redditSortInput.value = result.redditSort || 'current';
         if (enableContextMenuInput) enableContextMenuInput.checked = result.enableContextMenu ?? true;
         if (enableDebugModeInput) enableDebugModeInput.checked = result.enableDebugMode || false;
