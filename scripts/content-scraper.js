@@ -345,6 +345,7 @@ async function extractFromTranscriptPanel() {
         }
       }
     }
+
     
     return null;
     
@@ -542,29 +543,10 @@ async function extractRedditThread() {
         console.log(`[Reddit Extractor] Found ${targets.length} legacy candidates, processing ${sliced.length}`);
 
         for (const commentNode of sliced) {
-             const author = commentNode.querySelector('.author, [data-testid="comment_author"]')?.textContent?.trim() || 'User';
-             const body = commentNode.querySelector('.usertext-body, [data-testid="comment_body"]')?.innerText?.trim();
-             if (body) {
-                 let text = `User ${author}: ${body}`;
-                 
-                 // Simple depth check for legacy
-                 if (depthLimit > 0) {
-                     // immediate children are in .child > .sitetable > .thing
-                     const replies = commentNode.querySelectorAll(':scope > .child > .sitetable > .thing.comment');
-                     
-                     for (const reply of replies) {
-                         const rAuthor = reply.querySelector('.author')?.textContent?.trim() || 'User';
-                         const rBody = reply.querySelector('.usertext-body')?.innerText?.trim();
-                         if (rBody) {
-                             text += `\n    > Reply (${rAuthor}): ${rBody.replace(/\n/g, ' ')}`;
-                             // If depthLimit > 1, we could recurse here, but legacy recursion is messy. 
-                             // Keeping it simple: 1 level of reply for legacy unless rewritten recursively.
-                         }
-                     }
-                 }
-                 commentsText.push(text);
-             }
+            const threadText = extractLegacyCommentTree(commentNode, 0, depthLimit);
+            if (threadText) commentsText.push(threadText);
         }
+
     }
 
     const formattedOutput = `REDDIT THREAD: ${title}
@@ -611,3 +593,28 @@ function extractCommentTree(commentNode, currentDepth, maxDepth) {
     
     return text;
 }
+
+
+/**
+ * Recursive extractor for Legacy Reddit comments
+ */
+function extractLegacyCommentTree(commentNode, currentDepth, maxDepth) {
+    const author = commentNode.querySelector('.author, [data-testid="comment_author"]')?.textContent?.trim() || 'User';
+    const body = commentNode.querySelector('.usertext-body, [data-testid="comment_body"]')?.innerText?.trim();
+    
+    if (!body) return null;
+    
+    let text = `${'    '.repeat(currentDepth)}${currentDepth > 0 ? '> ' : ''}User ${author}: ${body.replace(/\n/g, ' ')}`;
+    
+    if (currentDepth < maxDepth) {
+        // Legacy nesting: :scope > .child > .sitetable > .thing.comment
+        const directChildren = Array.from(commentNode.querySelectorAll(':scope > .child > .sitetable > .thing.comment'));
+        const replies = directChildren.map(child => extractLegacyCommentTree(child, currentDepth + 1, maxDepth)).filter(Boolean);
+        if (replies.length > 0) {
+            text += '\n' + replies.join('\n');
+        }
+    }
+    
+    return text;
+}
+
