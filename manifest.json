@@ -3,9 +3,10 @@
   "name": "__MSG_extName__",
   "version": "1.0.0",
   "description": "__MSG_extDescription__",
+  "homepage_url": "https://tekky.cc/",
   "default_locale": "en",
   "icons": {
-    "16": "logo.png",
+    "16": "icons/icon16.png",
     "32": "logo.png",
     "48": "logo.png",
     "128": "logo.png"
@@ -35,16 +36,9 @@
   "background": {
     "service_worker": "background.js"
   },
-  "content_scripts": [
-    {
-      "matches": ["<all_urls>"],
-      "js": ["content.js"],
-      "run_at": "document_end"
-    }
-  ],
   "web_accessible_resources": [
     {
-      "resources": ["logo.png", "scripts/content-scraper.js"],
+      "resources": ["logo.png"],
       "matches": ["<all_urls>"]
     }
   ]

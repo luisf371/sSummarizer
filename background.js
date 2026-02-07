@@ -171,24 +171,35 @@ async function handleIconClick(tab, directTextContent = null, customPrompt = nul
   const uniqueId = Date.now() + Math.floor(Math.random() * 1000); // More unique ID (integer only)
   tabIdMap.set(uniqueId, tab.id);
 
-  try {
-    // Kick off the UI with error handling
-    await sendMessageSafely(tab.id, { action: 'createFloatingWindow', uniqueId });
-    await sendMessageSafely(tab.id, { action: 'showLoading', uniqueId });
-  } catch (error) {
-    console.error('[Background] Failed to initialize UI:', error);
-    tabIdMap.delete(uniqueId);
-    return;
-  }
+  // Inject content.js FIRST before sending any messages
+  chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    files: ['content.js']
+  }, async (injectionResults) => {
+    if (chrome.runtime.lastError) {
+      console.error('[Background] Failed to inject content.js:', chrome.runtime.lastError.message);
+      tabIdMap.delete(uniqueId);
+      return; // Graceful failure - can't show UI on restricted pages
+    }
 
-  // If we have direct text (e.g. from context menu selection), skip scraping
-  if (directTextContent) {
-    console.log('[Background] Using direct text content from selection');
-    makeApiCall(directTextContent, uniqueId, customPrompt, commandName);
-    return;
-  }
+    try {
+      // Now safe to send messages - content.js is injected
+      await sendMessageSafely(tab.id, { action: 'createFloatingWindow', uniqueId });
+      await sendMessageSafely(tab.id, { action: 'showLoading', uniqueId });
+    } catch (error) {
+      console.error('[Background] Failed to initialize UI:', error);
+      tabIdMap.delete(uniqueId);
+      return;
+    }
 
-  if (tab.url.includes('youtube.com/watch')) {
+    // If we have direct text (e.g. from context menu selection), skip scraping
+    if (directTextContent) {
+      console.log('[Background] Using direct text content from selection');
+      makeApiCall(directTextContent, uniqueId, customPrompt, commandName);
+      return;
+    }
+
+    if (tab.url.includes('youtube.com/watch')) {
     console.log('[Background] Detected YouTube watch page');
     const match = tab.url.match(/[?&]v=([^&]+)/);
     const videoId = match?.[1];
@@ -301,6 +312,7 @@ async function handleIconClick(tab, directTextContent = null, customPrompt = nul
       });
     });
   }
+  });
 }
 
 /**
