@@ -29,6 +29,157 @@ const CONFIG = {
   CONTEXT_MENU_ID: "summarize-selection"
 };
 
+// ===== PROVIDER ADAPTERS =====
+// Adapter objects for different API providers (OpenAI, Anthropic, Gemini)
+// Each adapter provides: buildHeaders, transformRequest, parseStreamChunk, isStreamEnd
+
+const OpenAIAdapter = {
+  buildHeaders(apiKey) {
+    return {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey.trim()}`
+    };
+  },
+  
+  transformRequest(messages, model, systemPrompt) {
+    // OpenAI format: system message in messages array
+    const formattedMessages = [];
+    if (systemPrompt) {
+      formattedMessages.push({ role: 'system', content: systemPrompt });
+    }
+    formattedMessages.push(...messages);
+    return {
+      model: model?.trim() || 'gpt-3.5-turbo',
+      messages: formattedMessages,
+      stream: true
+    };
+  },
+  
+  parseStreamChunk(jsonData) {
+    // OpenAI: choices[0].delta.content for streaming
+    if (jsonData.choices?.[0]?.delta?.content) {
+      return jsonData.choices[0].delta.content;
+    }
+    // Non-streaming fallback
+    if (jsonData.choices?.[0]?.message?.content && !jsonData.choices?.[0]?.delta) {
+      return jsonData.choices[0].message.content;
+    }
+    return null;
+  },
+  
+  isStreamEnd(data) {
+    // OpenAI uses [DONE] signal (handled in processBuffer) or finish_reason
+    return data === '[DONE]' || data?.choices?.[0]?.finish_reason === 'stop';
+  }
+};
+
+const AnthropicAdapter = {
+  buildHeaders(apiKey) {
+    return {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey.trim(),
+      'anthropic-version': '2023-06-01'
+    };
+  },
+  
+  transformRequest(messages, model, systemPrompt) {
+    // Anthropic: system is a separate top-level field, not in messages
+    // Messages must alternate user/assistant, no system role in messages
+    const filteredMessages = messages.filter(m => m.role !== 'system');
+    return {
+      model: model?.trim() || 'claude-3-sonnet-20240229',
+      system: systemPrompt || undefined,
+      messages: filteredMessages,
+      max_tokens: 4096,
+      stream: true
+    };
+  },
+  
+  parseStreamChunk(jsonData) {
+    // Anthropic: content_block_delta with delta.text
+    if (jsonData.type === 'content_block_delta' && jsonData.delta?.text) {
+      return jsonData.delta.text;
+    }
+    return null;
+  },
+  
+  isStreamEnd(data) {
+    // Anthropic: message_stop event or stop_reason
+    return data?.type === 'message_stop' || data?.stop_reason;
+  }
+};
+
+const GeminiAdapter = {
+  buildHeaders(apiKey) {
+    // Gemini uses x-goog-api-key header (URL param handled separately in makeApiCall)
+    return {
+      'Content-Type': 'application/json',
+      'x-goog-api-key': apiKey.trim()
+    };
+  },
+  
+  transformRequest(messages, model, systemPrompt) {
+    // Gemini: uses contents array with parts structure
+    // System prompt goes in systemInstruction field
+    const contents = messages.map(msg => ({
+      role: msg.role === 'assistant' ? 'model' : msg.role,
+      parts: [{ text: msg.content }]
+    }));
+    
+    const request = {
+      contents: contents
+    };
+    
+    if (systemPrompt) {
+      request.systemInstruction = {
+        parts: [{ text: systemPrompt }]
+      };
+    }
+    
+    return request;
+  },
+  
+  parseStreamChunk(jsonData) {
+    // Gemini: candidates[0].content.parts[0].text
+    if (jsonData.candidates?.[0]?.content?.parts?.[0]?.text) {
+      return jsonData.candidates[0].content.parts[0].text;
+    }
+    return null;
+  },
+  
+  isStreamEnd(data) {
+    // Gemini: finishReason in candidates
+    return data?.candidates?.[0]?.finishReason === 'STOP';
+  }
+};
+
+function getAdapter(provider, customFormat = null) {
+  // If custom format is provided (for custom providers), use that
+  if (customFormat) {
+    // For custom providers, caller should pass the format string
+    // Return OpenAI as default for OpenAI-compatible APIs
+    if (customFormat === 'anthropic') return AnthropicAdapter;
+    if (customFormat === 'gemini') return GeminiAdapter;
+    return OpenAIAdapter; // Default for openai-compatible
+  }
+  
+  // Route based on provider name
+  const providerLower = (provider || '').toLowerCase();
+  
+  if (providerLower.includes('anthropic') || providerLower.includes('claude')) {
+    return AnthropicAdapter;
+  }
+  
+  if (providerLower.includes('gemini') || providerLower.includes('google')) {
+    return GeminiAdapter;
+  }
+  
+  // Default to OpenAI (works for OpenAI, Azure, Groq, and other OpenAI-compatible APIs)
+  return OpenAIAdapter;
+}
+
+// ===== END PROVIDER ADAPTERS =====
+
 // Initialize context menu on install/update
 chrome.runtime.onInstalled.addListener(() => {
   setupContextMenu();
@@ -381,10 +532,11 @@ async function makeApiCall(inputData, uniqueId, customUserPrompt = null, command
     return;
   }
 
-  // Load settings first to check debug mode
-  const { apiUrl, model, systemPrompt, timestampPrompt, apiKey, enableStreaming, enableDebugMode, includeTimestamps } = await chrome.storage.sync.get(
-    ['apiUrl', 'model', 'systemPrompt', 'timestampPrompt', 'apiKey', 'enableStreaming', 'enableDebugMode', 'includeTimestamps']
+  const { apiUrl, model, systemPrompt, timestampPrompt, apiKey, enableStreaming, enableDebugMode, includeTimestamps, apiProvider, customFormat } = await chrome.storage.sync.get(
+    ['apiUrl', 'model', 'systemPrompt', 'timestampPrompt', 'apiKey', 'enableStreaming', 'enableDebugMode', 'includeTimestamps', 'apiProvider', 'customFormat']
   );
+  
+  const adapter = getAdapter(apiProvider, customFormat);
 
   // Universal Debug Mode Check - intercept BEFORE any processing/truncation
   if (enableDebugMode) {
@@ -522,26 +674,29 @@ async function makeApiCall(inputData, uniqueId, customUserPrompt = null, command
   responseAccumulators.set(uniqueId, '');
 
   try {
-    const requestBody = {
-      model: model?.trim() || 'gpt-3.5-turbo',
-      messages: messages,
-      stream: enableStreaming || false
-    };
+    const requestBody = adapter.transformRequest(messages, model, effectiveSystemPrompt);
+    if (enableStreaming !== false) {
+      requestBody.stream = true;
+    }
 
-    // Enhanced logging for API request debugging
     console.log('[API] ===== API REQUEST DEBUG =====');
-    console.log('[API] Model:', requestBody.model);
+    console.log('[API] Provider:', apiProvider || 'default');
+    console.log('[API] Model:', model);
     console.log('[API] Streaming enabled:', requestBody.stream); 
-    console.log('[API] Message count:', requestBody.messages.length);
+    console.log('[API] Message count:', messages.length);
     console.log('[API] ===== END API REQUEST DEBUG =====');
 
+    let fetchUrl = apiUrl;
+    const isGemini = adapter === GeminiAdapter;
+    if (isGemini) {
+      const geminiModel = model?.trim() || 'gemini-pro';
+      fetchUrl = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:streamGenerateContent?key=${apiKey.trim()}`;
+    }
+
     console.log('[API] Making API Request, Streaming mode is:', enableStreaming);
-    const response = await fetch(apiUrl, {
+    const response = await fetch(fetchUrl, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey.trim()}`
-      },
+      headers: adapter.buildHeaders(apiKey),
       body: JSON.stringify(requestBody),
       signal: controller.signal
     });
