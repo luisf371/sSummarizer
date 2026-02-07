@@ -576,7 +576,7 @@ function extractCommentTree(commentNode, currentDepth, maxDepth) {
     
     if (!body) return null;
     
-    let text = `${'    '.repeat(currentDepth)}${currentDepth > 0 ? '> ' : ''}User ${author}: ${body.replace(/\n/g, ' ')}`;
+    let text = `${'    '.repeat(currentDepth)}${currentDepth > 0 ? '>'.repeat(currentDepth) + ' ' : ''}User ${author}: ${body.replace(/\n/g, ' ')}`;
     
     if (currentDepth < maxDepth) {
         // Find direct children comments
@@ -604,7 +604,7 @@ function extractLegacyCommentTree(commentNode, currentDepth, maxDepth) {
     
     if (!body) return null;
     
-    let text = `${'    '.repeat(currentDepth)}${currentDepth > 0 ? '> ' : ''}User ${author}: ${body.replace(/\n/g, ' ')}`;
+    let text = `${'    '.repeat(currentDepth)}${currentDepth > 0 ? '>'.repeat(currentDepth) + ' ' : ''}User ${author}: ${body.replace(/\n/g, ' ')}`;
     
     if (currentDepth < maxDepth) {
         // Legacy nesting: :scope > .child > .sitetable > .thing.comment
