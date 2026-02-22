@@ -68,3 +68,4 @@ Pipfile.lock
 *.rar
 *.bak
 *.tmp
+internalDocs/

@@ -1,86 +1,55 @@
-![sSummarizer Icon](logo.png)
+![Project Banner](path/to/image.png)
+<!-- Replace with actual banner if available -->
 
-# sSummarizer
+![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)
+![Language: JavaScript](https://img.shields.io/badge/Language-JavaScript-F7DF1E.svg)
+![Version: 1.0.0](https://img.shields.io/badge/Version-1.0.0-green.svg)
 
-![License](https://img.shields.io/badge/license-Proprietary-red)
-![Language](https://img.shields.io/badge/language-JavaScript-yellow)
-![Version](https://img.shields.io/badge/version-1.0.0-blue)
+🌍 **Supported Languages:** English, Spanish, French, Japanese, Portuguese (Brazil), Chinese (Simplified)
 
-🌍 **Supported Languages:** English, Spanish, French, Japanese, Portuguese (Brazilian), Chinese (Simplified)
-
-sSummarizer is an intelligent Chrome extension that leverages advanced AI models to provide concise, context-aware summaries of web content. Whether you are browsing complex articles, watching lengthy YouTube videos, or navigating deep Reddit threads, this tool extracts the essential information in seconds.
+sSummarizer uses powerful AI to help you read less and learn more by summarizing any webpage in seconds. It works perfectly with standard articles, YouTube videos (using transcripts), and even deep Reddit threads.
 
 ## Key Features
 
-*   **Multi-Provider AI Support**: Connect to OpenAI, Azure, Groq, Anthropic, Gemini, and more.
-*   **YouTube Intelligence**: Automatic transcript extraction with timestamp support and subtitle preferences.
-*   **Reddit Optimization**: Summarize entire threads with customizable comment depth and sorting logic.
-*   **Context Menu Integration**: Highlight any text on a page and summarize it instantly via the right-click menu.
-*   **Streaming Output**: Watch summaries generate in real-time with a smooth, responsive interface.
-*   **Debug Mode**: Inspect extracted content to understand exactly what data is being sent to the AI.
+*   **Multi-Platform Support**: Summarize news articles, YouTube videos with timestamps, and Reddit comment threads.
+*   **AI Provider Choice**: Connect to your favorite AI like OpenAI, Claude, Gemini, Groq, or Perplexity.
+*   **Slash Commands**: Create quick shortcuts like `/bullet` or `/short` to change how the AI responds.
+*   **Real-time Streaming**: Watch the AI write your summary live instead of waiting for a full response.
+*   **Context Menu**: Highlight any text on a page and right-click to summarize just that specific part.
 
 ## Quick Start
 
-### Installation
+### Install from Chrome Web Store
+1. Visit the [Chrome Web Store](https://chrome.google.com/webstore) (Coming Soon).
+2. Click **Add to Chrome**.
 
-1.  Clone this repository or download the source code.
-2.  Open Chrome and navigate to `chrome://extensions/`.
-3.  Enable **Developer mode** in the top right corner.
-4.  Click **Load unpacked** and select the `sSummarizer` directory.
-
-### Configuration
-
-1.  Right-click the sSummarizer icon and select **Options**, or click the gear icon in the extension popup.
-2.  Select your preferred **AI Provider** (e.g., OpenAI, Anthropic).
-3.  Enter your **API Key** and configure the model settings.
-4.  (Optional) Customize the **System Prompt** to change the summary style or language.
-
-## Usage
-
-### Web Pages
-Click the sSummarizer icon in your toolbar while on any article or blog post. A floating window will appear and begin generating a summary of the page content.
-
-### YouTube Videos
-When on a YouTube video page, sSummarizer automatically detects the transcript. The summary will include key points and can be configured to respect specific timestamps.
-
-### Reddit Threads
-On Reddit, the extension scrapes comments based on your configured depth. It provides a synthesized view of the discussion, capturing the community sentiment and top arguments.
+### Manual Installation
+1. Download this repository as a ZIP and extract it.
+2. Open Chrome and go to `chrome://extensions/`.
+3. Enable **Developer mode** and click **Load unpacked**.
+4. Open the extension **Options** and add your AI API key to get started.
 
 ## Overview
 
-sSummarizer is built using a modular architecture that separates content extraction from AI processing. The `content.js` script handles site-specific scraping (Web, YouTube, Reddit), while `background.js` manages API communication and streaming responses. 
-
-### Permissions Explanation
-
-*   **activeTab**: Required to access the content of the current tab when the user invokes the extension.
-*   **scripting**: Used to inject the extraction logic and the floating UI into the web page.
-*   **storage**: Necessary for saving user configurations, API keys, and custom prompts securely.
-*   **contextMenus**: Enables the "Summarize selection" feature in the browser's right-click menu.
+sSummarizer is a sophisticated tool built on Manifest V3 that securely communicates with various AI endpoints. It features a custom content extractor that identifies the main text, video transcripts, or comment structures to give the AI exactly what it needs for a perfect summary.
 
 ## FAQ
 
-**1. Is an API key required to use the extension?**
-Yes, sSummarizer acts as a client for various AI providers. You must provide your own API key for OpenAI, Anthropic, Gemini, or other supported services.
+**Q: What does the 's' in the name mean?**
+A: It stands for simple and lightweight application with no bloat, tracking, or ads.
 
-**2. Is my data sent to any third-party servers?**
-No. Your API keys are stored locally in your browser's storage, and requests are sent directly from your machine to the AI provider's official API endpoints.
+**Q: Do I need my own API key?**
+A: Yes, you will need to provide your own key from a provider like OpenAI or Anthropic to use the summarization features.
 
-**3. Why is the YouTube transcript not appearing?**
-Ensure the video has captions available. sSummarizer attempts to pull official or auto-generated captions; if none exist, it may not be able to generate a video summary.
+**Q: Does it work on YouTube?**
+A: Yes, it pulls the transcript from the video and summarizes the key points, including timestamps.
 
-**4. Can I change the summary language?**
-Yes. You can modify the "System Prompt" in the Options page to instruct the AI to respond in your preferred language (e.g., "Summarize the following text in French").
+**Q: Can I change the summary style?**
+A: Yes, you can set a "System Prompt" in the settings or use custom Slash Commands to tell the AI exactly how to write.
 
-**5. What is Debug Mode?**
-Debug Mode allows you to see the raw text extracted from the page before it is sent to the AI. This is useful for troubleshooting extraction issues on specific websites.
-
-## Credits
-
-**Author:** [tekky.cc](https://tekky.cc)
-
-This project was developed as an independent tool for intelligent web content consumption.
+**Q: Is my browsing data private?**
+A: Absolutely. The extension only looks at the page you specifically ask it to summarize and sends that text only to your chosen AI provider.
 
 ## License
 
-This extension is **Proprietary Software**. See `fork.md` for more details.
-
+MIT License

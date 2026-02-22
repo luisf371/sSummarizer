@@ -1,119 +1,127 @@
 // content.js - Content Script for Floating Window UI
 // Handles the creation and management of floating summarization windows
-console.log('[Content] Content script loaded');
 
-// State management for multiple floating windows
-let floatingWindows = new Map(); // Stores ShadowRoot
-let isMinimized = new Map();
-let textSizes = new Map();
-let windowPositions = new Map();
-let windowSizes = new Map();
-let contentBuffers = new Map();
-let userScrolledUp = new Map();
-let isContentUpdating = new Map(); // Flag to ignore scroll events during content updates
-let chatHistories = new Map();
-let isChatProcessing = new Map();
-let slashCommandsCache = new Map();
-let selectedSlashCommand = new Map();
-let dropdownSelectedIndex = new Map();
-
-// Configuration constants
-const UI_CONFIG = {
-  DEFAULT_FONT_SIZE: 14,
-  MIN_FONT_SIZE: 8,
-  MAX_FONT_SIZE: 24,
-  DEFAULT_WIDTH: 280,
-  DEFAULT_HEIGHT: 250,
-  MIN_WIDTH: 280,
-  MIN_HEIGHT: 250,
-  POSITION_OFFSET: 20 // Offset for multiple windows
-};
-
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  console.log('Received message:', request);
-  switch (request.action) {
-    case 'createFloatingWindow':
-      createFloatingWindow(request.uniqueId);
-      sendResponse({ success: true });
-      break;
-    case 'appendToFloatingWindow':
-      handleMessage(request.content, request.uniqueId);
-      sendResponse({ success: true });
-      break;
-    case 'showLoading':
-      showLoading(request.uniqueId);
-      sendResponse({ success: true });
-      break;
-    case 'hideLoading':
-      hideLoading(request.uniqueId);
-      sendResponse({ success: true });
-      break;
-    case 'streamEnd':
-      handleStreamEnd(request);
-      sendResponse({ success: true });
-      break;
+(function () {
+  if (window.sSummarizerLoaded) {
+    console.log("[Content] Content script already loaded. Skipping re-initialization.");
+    return;
   }
-});
+  window.sSummarizerLoaded = true;
 
-// ———— Floating‐window and utility functions below ————
+  console.log('[Content] Content script loaded');
 
-/**
- * Create a floating window with improved positioning and error handling
- */
-async function createFloatingWindow(uniqueId) {
-  try {
-    if (floatingWindows.has(uniqueId)) {
-      const existingWindow = floatingWindows.get(uniqueId);
-      if (existingWindow && existingWindow.host && existingWindow.host.parentNode) {
-        existingWindow.host.remove();
-      }
-      cleanupWindowState(uniqueId);
+  // State management for multiple floating windows
+  let floatingWindows = new Map(); // Stores ShadowRoot
+  let isMinimized = new Map();
+  let textSizes = new Map();
+  let windowPositions = new Map();
+  let windowSizes = new Map();
+  let contentBuffers = new Map();
+  let userScrolledUp = new Map();
+  let isContentUpdating = new Map(); // Flag to ignore scroll events during content updates
+  let chatHistories = new Map();
+  let isChatProcessing = new Map();
+  let slashCommandsCache = new Map();
+  let selectedSlashCommand = new Map();
+  let dropdownSelectedIndex = new Map();
+
+  // Configuration constants
+  const UI_CONFIG = {
+    DEFAULT_FONT_SIZE: 14,
+    MIN_FONT_SIZE: 8,
+    MAX_FONT_SIZE: 24,
+    DEFAULT_WIDTH: 280,
+    DEFAULT_HEIGHT: 250,
+    MIN_WIDTH: 280,
+    MIN_HEIGHT: 250,
+    POSITION_OFFSET: 20 // Offset for multiple windows
+  };
+
+  chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    console.log('Received message:', request);
+    switch (request.action) {
+      case 'createFloatingWindow':
+        createFloatingWindow(request.uniqueId);
+        sendResponse({ success: true });
+        break;
+      case 'appendToFloatingWindow':
+        handleMessage(request.content, request.uniqueId);
+        sendResponse({ success: true });
+        break;
+      case 'showLoading':
+        showLoading(request.uniqueId);
+        sendResponse({ success: true });
+        break;
+      case 'hideLoading':
+        hideLoading(request.uniqueId);
+        sendResponse({ success: true });
+        break;
+      case 'streamEnd':
+        handleStreamEnd(request);
+        sendResponse({ success: true });
+        break;
     }
+  });
 
-    const { defaultFontSize } = await chrome.storage.sync.get('defaultFontSize');
-    const initialFontSize = defaultFontSize || UI_CONFIG.DEFAULT_FONT_SIZE;
+  // ———— Floating‐window and utility functions below ————
 
-    const savedState = await chrome.storage.local.get(['windowState']);
-    let state = savedState.windowState || {};
-
-    // Validate and correct window position
-    state = validateWindowState(state);
-
-    let position;
-    const size = { width: state.width, height: state.height };
-
-    // Determine position:
-    // If we already have windows open, calculate a cascaded position to avoid overlap.
-    // Otherwise, use the saved state (or default) for the first window.
-    if (floatingWindows.size > 0) {
-      position = calculateWindowPosition();
-      // calculateWindowPosition returns {top, right}, so ensure left is null
-      position.left = null;
-    } else {
-      position = { top: state.top, left: state.left };
-
-      // If right is not saved and left is null, default to right: 20
-      if (position.left === null) {
-        position.right = 20;
+  /**
+   * Create a floating window with improved positioning and error handling
+   */
+  async function createFloatingWindow(uniqueId) {
+    try {
+      if (floatingWindows.has(uniqueId)) {
+        const existingWindow = floatingWindows.get(uniqueId);
+        if (existingWindow && existingWindow.host && existingWindow.host.parentNode) {
+          existingWindow.host.remove();
+        }
+        cleanupWindowState(uniqueId);
       }
-    }
 
-    // Create Host Element
-    const host = document.createElement('div');
-    host.id = `sSummarizer-host-${uniqueId}`;
-    host.style.all = 'initial';
-    host.style.zIndex = '2147483647'; // Max safe integer to ensure it's on top
-    // Position host to ensure it doesn't affect layout, though children are fixed.
-    // We don't set position: fixed on host to avoid creating a new stacking context 
-    // that might interfere with child's fixed positioning relative to viewport,
-    // unless strictly necessary. But 'all: initial' resets position to static.
+      const { defaultFontSize } = await chrome.storage.sync.get('defaultFontSize');
+      const initialFontSize = defaultFontSize || UI_CONFIG.DEFAULT_FONT_SIZE;
 
-    // Attach Shadow DOM
-    const shadow = host.attachShadow({ mode: 'open' });
+      const savedState = await chrome.storage.local.get(['windowState']);
+      let state = savedState.windowState || {};
 
-    const positionStyle = position.left !== null ? `top: ${position.top}px; left: ${position.left}px;` : `top: ${position.top}px; right: ${position.right}px;`;
+      // Validate and correct window position
+      state = validateWindowState(state);
 
-    shadow.innerHTML = `
+      let position;
+      const size = { width: state.width, height: state.height };
+
+      // Determine position:
+      // If we already have windows open, calculate a cascaded position to avoid overlap.
+      // Otherwise, use the saved state (or default) for the first window.
+      if (floatingWindows.size > 0) {
+        position = calculateWindowPosition();
+        // calculateWindowPosition returns {top, right}, so ensure left is null
+        position.left = null;
+      } else {
+        position = { top: state.top, left: state.left };
+
+        // If right is not saved and left is null, default to right: 20
+        if (position.left === null) {
+          position.right = 20;
+        }
+      }
+
+      // Create Host Element
+      const host = document.createElement('div');
+      host.id = `sSummarizer-host-${uniqueId}`;
+      host.style.all = 'initial';
+      host.style.zIndex = '2147483647'; // Max safe integer to ensure it's on top
+      // Position host to ensure it doesn't affect layout, though children are fixed.
+      // We don't set position: fixed on host to avoid creating a new stacking context 
+      // that might interfere with child's fixed positioning relative to viewport,
+      // unless strictly necessary. But 'all: initial' resets position to static.
+
+      // Attach Shadow DOM
+      const shadow = host.attachShadow({ mode: 'open' });
+
+      const positionStyle = position.left !== null ? `top: ${position.top}px; left: ${position.left}px;` : `top: ${position.top}px; right: ${position.right}px;`;
+
+      shadow.innerHTML = `
       <div id="floating-window-${uniqueId}" style="position: fixed; ${positionStyle} z-index: 9999; background-color: #1e1e1e; color: #cfcfcf; border: 1px solid #333; border-radius: 8px; width: ${size.width}px; height: ${size.height}px; display: flex; flex-direction: column; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; backdrop-filter: blur(10px); box-sizing: border-box;">
         <div id="title-bar-${uniqueId}" style="padding: 12px 16px; background: linear-gradient(135deg, #2e2e2e, #3a3a3a); cursor: move; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #444; border-radius: 8px 8px 0 0; user-select: none;">
           <span style="font-weight: 600; color: #f0f0f0; font-size: 14px;">AI Summarizer</span>
@@ -341,985 +349,987 @@ async function createFloatingWindow(uniqueId) {
       </style>
     `;
 
-    document.body.appendChild(host);
+      document.body.appendChild(host);
 
-    // Initialize state - Store ShadowRoot
-    floatingWindows.set(uniqueId, shadow);
-    isMinimized.set(uniqueId, false);
-    textSizes.set(uniqueId, initialFontSize);
-    windowPositions.set(uniqueId, position);
-    userScrolledUp.set(uniqueId, false);
-    isContentUpdating.set(uniqueId, false);
-    isChatProcessing.set(uniqueId, false);
-    selectedSlashCommand.set(uniqueId, null);
-    dropdownSelectedIndex.set(uniqueId, -1);
-
-    // Load slash commands from storage
-    chrome.storage.sync.get(['slashCommands'], (result) => {
-      slashCommandsCache.set(uniqueId, result.slashCommands || []);
-    });
-
-    const win = shadow.querySelector(`#floating-window-${uniqueId}`);
-    const contentEl = win.querySelector(`#content-${uniqueId}`);
-
-    // Add scroll event listener to track user scrolling
-    if (contentEl) {
-      contentEl.addEventListener('scroll', () => {
-        // Skip scroll events triggered by content updates to prevent race conditions
-        if (isContentUpdating.get(uniqueId)) {
-          return;
-        }
-
-        // A threshold of 30px is used to account for layout shifts and inaccuracies
-        const isScrolledToBottom = contentEl.scrollHeight - contentEl.clientHeight <= contentEl.scrollTop + 30;
-        userScrolledUp.set(uniqueId, !isScrolledToBottom);
-
-        // Update scroll-to-bottom button visibility
-        updateScrollButtonVisibility(uniqueId);
-      });
-    }
-
-    // Setup scroll-to-bottom button
-    const scrollBtn = win.querySelector(`#scroll-to-bottom-${uniqueId}`);
-    if (scrollBtn) {
-      scrollBtn.addEventListener('click', () => {
-        scrollToBottomAndResume(uniqueId);
-      });
-    }
-
-
-    // Add event listeners with error handling
-    setupWindowEventListeners(uniqueId, win);
-    setupChatListeners(uniqueId, win);
-
-    // Make window interactive
-    makeDraggable(uniqueId, win, win.querySelector(`#title-bar-${uniqueId}`));
-    makeResizable(win, win.querySelector(`#resize-handle-${uniqueId}`));
-
-    console.log(`[Content] Created floating window ${uniqueId} at position`, position);
-
-  } catch (error) {
-    console.error('[Content] Error creating floating window:', error);
-    // Clean up on error
-    cleanupWindowState(uniqueId);
-  }
-}
-
-/**
- * Validates the window state to ensure it is within the viewport.
- * @param {object} state - The window state object with top, left, width, height.
- * @returns {object} A validated state object.
- */
-function validateWindowState(state) {
-  const defaults = {
-    top: 20,
-    left: null,
-    right: 20,
-    width: UI_CONFIG.DEFAULT_WIDTH,
-    height: UI_CONFIG.DEFAULT_HEIGHT
-  };
-
-  const validatedState = { ...defaults, ...state };
-
-  // Enforce minimum dimensions to prevent restoring minimized (tiny) sizes
-  if (validatedState.width < UI_CONFIG.MIN_WIDTH) validatedState.width = UI_CONFIG.MIN_WIDTH;
-  if (validatedState.height < UI_CONFIG.MIN_HEIGHT) validatedState.height = UI_CONFIG.MIN_HEIGHT;
-
-  const viewportWidth = window.innerWidth;
-  const viewportHeight = window.innerHeight;
-
-  // If left is null, calculate it from right
-  if (validatedState.left === null) {
-    validatedState.left = viewportWidth - validatedState.width - validatedState.right;
-  }
-
-  // Check if window is out of bounds
-  const isOutOfBounds =
-    validatedState.top < 0 ||
-    validatedState.left < 0 ||
-    validatedState.top > viewportHeight - 50 || // 50px buffer for title bar
-    validatedState.left > viewportWidth - 50;
-
-  if (isOutOfBounds) {
-    console.warn('[Content] Window position is out of bounds. Resetting to default.');
-    return { ...defaults };
-  }
-
-  return validatedState;
-}
-
-/**
- * Calculate optimal position for new window to avoid overlaps
- */
-function calculateWindowPosition() {
-  const existingWindows = Array.from(floatingWindows.values());
-  const basePosition = { top: 20, right: 20 };
-
-  if (existingWindows.length === 0) {
-    return basePosition;
-  }
-
-  // Offset new windows to avoid complete overlap
-  const offset = existingWindows.length * UI_CONFIG.POSITION_OFFSET;
-  return {
-    top: basePosition.top + offset,
-    right: basePosition.right + offset
-  };
-}
-
-/**
- * Setup event listeners for window controls
- */
-function setupWindowEventListeners(uniqueId, win) {
-  try {
-    const closeBtn = win.querySelector(`#close-btn-${uniqueId}`);
-    const minimizeBtn = win.querySelector(`#minimize-btn-${uniqueId}`);
-    const increaseFontBtn = win.querySelector(`#increase-font-${uniqueId}`);
-    const decreaseFontBtn = win.querySelector(`#decrease-font-${uniqueId}`);
-
-    const buttons = [closeBtn, minimizeBtn, increaseFontBtn, decreaseFontBtn];
-    buttons.forEach(btn => {
-      if (btn) {
-        // Prevent drag initiation when clicking buttons
-        btn.addEventListener('pointerdown', (e) => e.stopPropagation());
-      }
-    });
-
-    if (closeBtn) {
-      closeBtn.addEventListener('click', () => closeWindow(uniqueId));
-    }
-
-    if (minimizeBtn) {
-      minimizeBtn.addEventListener('click', () => toggleMinimize(uniqueId));
-    }
-
-    if (increaseFontBtn) {
-      increaseFontBtn.addEventListener('click', () => changeFontSize(uniqueId, 1));
-    }
-
-    if (decreaseFontBtn) {
-      decreaseFontBtn.addEventListener('click', () => changeFontSize(uniqueId, -1));
-    }
-
-  } catch (error) {
-    console.error('[Content] Error setting up event listeners:', error);
-  }
-}
-
-/**
- * Close window and clean up resources
- */
-function closeWindow(uniqueId) {
-  try {
-    // Send stop request to background script to abort any ongoing API request
-    chrome.runtime.sendMessage({
-      action: 'stopApiRequest',
-      uniqueId: uniqueId
-    }, (response) => {
-      if (chrome.runtime.lastError) {
-        console.warn('[Content] Error sending stop request:', chrome.runtime.lastError.message);
-      } else {
-        console.log(`[Content] Stop request sent for ${uniqueId}`);
-      }
-    });
-
-    const win = floatingWindows.get(uniqueId); // ShadowRoot
-    // win is ShadowRoot, access host to remove
-    if (win && win.host) {
-      win.host.remove();
-    }
-    cleanupWindowState(uniqueId);
-    console.log(`[Content] Closed window ${uniqueId}`);
-  } catch (error) {
-    console.error('[Content] Error closing window:', error);
-  }
-}
-
-/**
- * Clean up window state from all maps
- */
-function cleanupWindowState(uniqueId) {
-  floatingWindows.delete(uniqueId);
-  isMinimized.delete(uniqueId);
-  textSizes.delete(uniqueId);
-  windowPositions.delete(uniqueId);
-  windowSizes.delete(uniqueId);
-  contentBuffers.delete(uniqueId);
-  userScrolledUp.delete(uniqueId);
-  isContentUpdating.delete(uniqueId);
-  slashCommandsCache.delete(uniqueId);
-  selectedSlashCommand.delete(uniqueId);
-  dropdownSelectedIndex.delete(uniqueId);
-}
-
-/**
- * Update the visibility of the scroll-to-bottom button
- */
-function updateScrollButtonVisibility(uniqueId) {
-  const win = floatingWindows.get(uniqueId);
-  if (!win) return;
-
-  const scrollBtn = win.querySelector(`#scroll-to-bottom-${uniqueId}`);
-  if (!scrollBtn) return;
-
-  const isScrolledUp = userScrolledUp.get(uniqueId);
-  if (isScrolledUp) {
-    scrollBtn.classList.add('visible');
-  } else {
-    scrollBtn.classList.remove('visible');
-  }
-}
-
-/**
- * Scroll to bottom and resume auto-scroll
- */
-function scrollToBottomAndResume(uniqueId) {
-  const win = floatingWindows.get(uniqueId);
-  if (!win) return;
-
-  const contentElement = win.querySelector(`#content-${uniqueId}`);
-  if (!contentElement) return;
-
-  // Set updating flag to prevent scroll listener from interfering
-  isContentUpdating.set(uniqueId, true);
-
-  // Reset user scroll state to enable auto-scroll
-  userScrolledUp.set(uniqueId, false);
-
-  // Scroll to bottom
-  contentElement.scrollTop = contentElement.scrollHeight;
-
-  // Hide the button
-  updateScrollButtonVisibility(uniqueId);
-
-  // Reset flag after a short delay
-  requestAnimationFrame(() => {
-    isContentUpdating.set(uniqueId, false);
-  });
-}
-
-
-/**
- * Change font size with validation and bounds checking
- */
-function changeFontSize(uniqueId, delta) {
-  try {
-    const win = floatingWindows.get(uniqueId); // ShadowRoot
-    if (!win) {
-      console.log(`[Content] Window ${uniqueId} already closed, skipping font size change`);
-      return;
-    }
-
-    const content = win.querySelector(`#content-${uniqueId}`);
-    if (!content) {
-      console.log(`[Content] Content element not found for window ${uniqueId} (window closed)`);
-      return;
-    }
-
-    const currentSize = textSizes.get(uniqueId) || UI_CONFIG.DEFAULT_FONT_SIZE;
-    let newSize = currentSize + delta;
-
-    // Enforce bounds
-    newSize = Math.max(UI_CONFIG.MIN_FONT_SIZE, Math.min(UI_CONFIG.MAX_FONT_SIZE, newSize));
-
-    if (newSize !== currentSize) {
-      textSizes.set(uniqueId, newSize);
-      content.style.fontSize = `${newSize}px`;
-      chrome.storage.sync.set({ defaultFontSize: newSize });
-      console.log(`[Content] Font size changed and saved: ${newSize}px`);
-    }
-  } catch (error) {
-    console.error('[Content] Error changing font size:', error);
-  }
-}
-
-/**
- * Toggle window minimize state with improved state management
- */
-function toggleMinimize(uniqueId) {
-  try {
-    const wrapper = floatingWindows.get(uniqueId); // ShadowRoot
-    if (!wrapper) {
-      console.log(`[Content] Window ${uniqueId} already closed, skipping minimize toggle`);
-      return;
-    }
-    const win = wrapper.querySelector(`#floating-window-${uniqueId}`);
-    const content = win.querySelector(`#content-${uniqueId}`);
-    const handle = win.querySelector(`#resize-handle-${uniqueId}`);
-    const minimizeBtn = win.querySelector(`#minimize-btn-${uniqueId}`);
-
-    if (!content || !handle || !win) {
-      console.log(`[Content] Required elements not found for window ${uniqueId} (window closed)`);
-      return;
-    }
-
-    const isCurrentlyMinimized = isMinimized.get(uniqueId) || false;
-
-    if (isCurrentlyMinimized) {
-      // Restore window
-      const lastSize = windowSizes.get(uniqueId);
-      content.style.display = ''; // Restore to default display
-      handle.style.display = 'block';
-      if (lastSize) {
-        win.style.height = `${lastSize.height}px`;
-      }
-      if (minimizeBtn) minimizeBtn.textContent = '−';
-      if (minimizeBtn) minimizeBtn.title = 'Minimize';
+      // Initialize state - Store ShadowRoot
+      floatingWindows.set(uniqueId, shadow);
       isMinimized.set(uniqueId, false);
-      console.log(`[Content] Restored window ${uniqueId}`);
-    } else {
-      // Minimize window
-      windowSizes.set(uniqueId, { width: win.offsetWidth, height: win.offsetHeight });
-      content.style.display = 'none';
-      handle.style.display = 'none';
-      win.style.height = 'auto'; // Let the title bar define the height
-      if (minimizeBtn) minimizeBtn.textContent = '□';
-      if (minimizeBtn) minimizeBtn.title = 'Restore';
-      isMinimized.set(uniqueId, true);
-      console.log(`[Content] Minimized window ${uniqueId}`);
-    }
-  } catch (error) {
-    console.error('[Content] Error toggling minimize:', error);
-  }
-}
+      textSizes.set(uniqueId, initialFontSize);
+      windowPositions.set(uniqueId, position);
+      userScrolledUp.set(uniqueId, false);
+      isContentUpdating.set(uniqueId, false);
+      isChatProcessing.set(uniqueId, false);
+      selectedSlashCommand.set(uniqueId, null);
+      dropdownSelectedIndex.set(uniqueId, -1);
 
-/**
- * Handle incoming messages with improved content sanitization
- */
-function handleMessage(content, uniqueId) {
-  try {
-    const win = floatingWindows.get(uniqueId); // ShadowRoot
-    if (!win) {
-      // This is expected when window is already closed - no need to warn
-      console.log(`[Content] Window ${uniqueId} already closed, skipping message`);
-      return;
+      // Load slash commands from storage
+      chrome.storage.sync.get(['slashCommands'], (result) => {
+        slashCommandsCache.set(uniqueId, result.slashCommands || []);
+      });
+
+      const win = shadow.querySelector(`#floating-window-${uniqueId}`);
+      const contentEl = win.querySelector(`#content-${uniqueId}`);
+
+      // Add scroll event listener to track user scrolling
+      if (contentEl) {
+        contentEl.addEventListener('scroll', () => {
+          // Skip scroll events triggered by content updates to prevent race conditions
+          if (isContentUpdating.get(uniqueId)) {
+            return;
+          }
+
+          // A threshold of 30px is used to account for layout shifts and inaccuracies
+          const isScrolledToBottom = contentEl.scrollHeight - contentEl.clientHeight <= contentEl.scrollTop + 30;
+          userScrolledUp.set(uniqueId, !isScrolledToBottom);
+
+          // Update scroll-to-bottom button visibility
+          updateScrollButtonVisibility(uniqueId);
+        });
+      }
+
+      // Setup scroll-to-bottom button
+      const scrollBtn = win.querySelector(`#scroll-to-bottom-${uniqueId}`);
+      if (scrollBtn) {
+        scrollBtn.addEventListener('click', () => {
+          scrollToBottomAndResume(uniqueId);
+        });
+      }
+
+
+      // Add event listeners with error handling
+      setupWindowEventListeners(uniqueId, win);
+      setupChatListeners(uniqueId, win);
+
+      // Make window interactive
+      makeDraggable(uniqueId, win, win.querySelector(`#title-bar-${uniqueId}`));
+      makeResizable(win, win.querySelector(`#resize-handle-${uniqueId}`));
+
+      console.log(`[Content] Created floating window ${uniqueId} at position`, position);
+
+    } catch (error) {
+      console.error('[Content] Error creating floating window:', error);
+      // Clean up on error
+      cleanupWindowState(uniqueId);
     }
+  }
+
+  /**
+   * Validates the window state to ensure it is within the viewport.
+   * @param {object} state - The window state object with top, left, width, height.
+   * @returns {object} A validated state object.
+   */
+  function validateWindowState(state) {
+    const defaults = {
+      top: 20,
+      left: null,
+      right: 20,
+      width: UI_CONFIG.DEFAULT_WIDTH,
+      height: UI_CONFIG.DEFAULT_HEIGHT
+    };
+
+    const validatedState = { ...defaults, ...state };
+
+    // Enforce minimum dimensions to prevent restoring minimized (tiny) sizes
+    if (validatedState.width < UI_CONFIG.MIN_WIDTH) validatedState.width = UI_CONFIG.MIN_WIDTH;
+    if (validatedState.height < UI_CONFIG.MIN_HEIGHT) validatedState.height = UI_CONFIG.MIN_HEIGHT;
+
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+
+    // If left is null, calculate it from right
+    if (validatedState.left === null) {
+      validatedState.left = viewportWidth - validatedState.width - validatedState.right;
+    }
+
+    // Check if window is out of bounds
+    const isOutOfBounds =
+      validatedState.top < 0 ||
+      validatedState.left < 0 ||
+      validatedState.top > viewportHeight - 50 || // 50px buffer for title bar
+      validatedState.left > viewportWidth - 50;
+
+    if (isOutOfBounds) {
+      console.warn('[Content] Window position is out of bounds. Resetting to default.');
+      return { ...defaults };
+    }
+
+    return validatedState;
+  }
+
+  /**
+   * Calculate optimal position for new window to avoid overlaps
+   */
+  function calculateWindowPosition() {
+    const existingWindows = Array.from(floatingWindows.values());
+    const basePosition = { top: 20, right: 20 };
+
+    if (existingWindows.length === 0) {
+      return basePosition;
+    }
+
+    // Offset new windows to avoid complete overlap
+    const offset = existingWindows.length * UI_CONFIG.POSITION_OFFSET;
+    return {
+      top: basePosition.top + offset,
+      right: basePosition.right + offset
+    };
+  }
+
+  /**
+   * Setup event listeners for window controls
+   */
+  function setupWindowEventListeners(uniqueId, win) {
+    try {
+      const closeBtn = win.querySelector(`#close-btn-${uniqueId}`);
+      const minimizeBtn = win.querySelector(`#minimize-btn-${uniqueId}`);
+      const increaseFontBtn = win.querySelector(`#increase-font-${uniqueId}`);
+      const decreaseFontBtn = win.querySelector(`#decrease-font-${uniqueId}`);
+
+      const buttons = [closeBtn, minimizeBtn, increaseFontBtn, decreaseFontBtn];
+      buttons.forEach(btn => {
+        if (btn) {
+          // Prevent drag initiation when clicking buttons
+          btn.addEventListener('pointerdown', (e) => e.stopPropagation());
+        }
+      });
+
+      if (closeBtn) {
+        closeBtn.addEventListener('click', () => closeWindow(uniqueId));
+      }
+
+      if (minimizeBtn) {
+        minimizeBtn.addEventListener('click', () => toggleMinimize(uniqueId));
+      }
+
+      if (increaseFontBtn) {
+        increaseFontBtn.addEventListener('click', () => changeFontSize(uniqueId, 1));
+      }
+
+      if (decreaseFontBtn) {
+        decreaseFontBtn.addEventListener('click', () => changeFontSize(uniqueId, -1));
+      }
+
+    } catch (error) {
+      console.error('[Content] Error setting up event listeners:', error);
+    }
+  }
+
+  /**
+   * Close window and clean up resources
+   */
+  function closeWindow(uniqueId) {
+    try {
+      // Send stop request to background script to abort any ongoing API request
+      chrome.runtime.sendMessage({
+        action: 'stopApiRequest',
+        uniqueId: uniqueId
+      }, (response) => {
+        if (chrome.runtime.lastError) {
+          console.warn('[Content] Error sending stop request:', chrome.runtime.lastError.message);
+        } else {
+          console.log(`[Content] Stop request sent for ${uniqueId}`);
+        }
+      });
+
+      const win = floatingWindows.get(uniqueId); // ShadowRoot
+      // win is ShadowRoot, access host to remove
+      if (win && win.host) {
+        win.host.remove();
+      }
+      cleanupWindowState(uniqueId);
+      console.log(`[Content] Closed window ${uniqueId}`);
+    } catch (error) {
+      console.error('[Content] Error closing window:', error);
+    }
+  }
+
+  /**
+   * Clean up window state from all maps
+   */
+  function cleanupWindowState(uniqueId) {
+    floatingWindows.delete(uniqueId);
+    isMinimized.delete(uniqueId);
+    textSizes.delete(uniqueId);
+    windowPositions.delete(uniqueId);
+    windowSizes.delete(uniqueId);
+    contentBuffers.delete(uniqueId);
+    userScrolledUp.delete(uniqueId);
+    isContentUpdating.delete(uniqueId);
+    slashCommandsCache.delete(uniqueId);
+    selectedSlashCommand.delete(uniqueId);
+    dropdownSelectedIndex.delete(uniqueId);
+  }
+
+  /**
+   * Update the visibility of the scroll-to-bottom button
+   */
+  function updateScrollButtonVisibility(uniqueId) {
+    const win = floatingWindows.get(uniqueId);
+    if (!win) return;
+
+    const scrollBtn = win.querySelector(`#scroll-to-bottom-${uniqueId}`);
+    if (!scrollBtn) return;
+
+    const isScrolledUp = userScrolledUp.get(uniqueId);
+    if (isScrolledUp) {
+      scrollBtn.classList.add('visible');
+    } else {
+      scrollBtn.classList.remove('visible');
+    }
+  }
+
+  /**
+   * Scroll to bottom and resume auto-scroll
+   */
+  function scrollToBottomAndResume(uniqueId) {
+    const win = floatingWindows.get(uniqueId);
+    if (!win) return;
 
     const contentElement = win.querySelector(`#content-${uniqueId}`);
-    if (!contentElement) {
-      console.log(`[Content] Content element not found for window ${uniqueId} (window closed)`);
-      return;
-    }
+    if (!contentElement) return;
 
-    let currentBuffer = contentBuffers.get(uniqueId) || '';
-    currentBuffer += content;
-    contentBuffers.set(uniqueId, currentBuffer);
-
-    // Set flag to ignore scroll events during content update
+    // Set updating flag to prevent scroll listener from interfering
     isContentUpdating.set(uniqueId, true);
 
-    // Save scroll position before updating content (for users who scrolled up)
-    const savedScrollTop = contentElement.scrollTop;
-    const wasScrolledUp = userScrolledUp.get(uniqueId);
+    // Reset user scroll state to enable auto-scroll
+    userScrolledUp.set(uniqueId, false);
 
-    // Sanitize and render the entire buffer
-    contentElement.innerHTML = sanitizeContent(currentBuffer);
+    // Scroll to bottom
+    contentElement.scrollTop = contentElement.scrollHeight;
 
-    // Handle scroll based on user state
-    if (!wasScrolledUp) {
-      // Auto-scroll to bottom
-      requestAnimationFrame(() => {
-        contentElement.scrollTop = contentElement.scrollHeight;
-        // Reset flag after scroll is applied
-        isContentUpdating.set(uniqueId, false);
-      });
-    } else {
-      // Restore previous scroll position to prevent text drift
-      requestAnimationFrame(() => {
-        contentElement.scrollTop = savedScrollTop;
-        isContentUpdating.set(uniqueId, false);
-        // Update button visibility when user is scrolled up
-        updateScrollButtonVisibility(uniqueId);
-      });
-    }
+    // Hide the button
+    updateScrollButtonVisibility(uniqueId);
 
-
-    // Apply current font size
-    const currentFontSize = textSizes.get(uniqueId) || UI_CONFIG.DEFAULT_FONT_SIZE;
-    contentElement.style.fontSize = `${currentFontSize}px`;
-
-    // Auto-restore if minimized
-    if (isMinimized.get(uniqueId)) {
-      console.log(`[Content] Auto-restoring minimized window ${uniqueId}`);
-      toggleMinimize(uniqueId);
-    }
-
-  } catch (error) {
-    console.error('[Content] Error handling message:', error);
-  }
-}
-
-
-/**
- * Convert markdown to HTML and sanitize content
- */
-function sanitizeContent(content) {
-  if (typeof content !== 'string') {
-    return String(content || '');
+    // Reset flag after a short delay
+    requestAnimationFrame(() => {
+      isContentUpdating.set(uniqueId, false);
+    });
   }
 
-  // Convert markdown to HTML
-  let html = convertMarkdownToHtml(content);
 
-  // Allow basic formatting tags but escape potentially dangerous content
-  const allowedTags = ['b', 'i', 'em', 'strong', 'br', 'p', 'div', 'span', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol', 'li', 'code', 'pre', 'blockquote', 'hr'];
-  const tagRegex = /<(\/?)(\w+)([^>]*)>/gi;
-
-  return html.replace(tagRegex, (match, slash, tagName, attributes) => {
-    if (allowedTags.includes(tagName.toLowerCase())) {
-      // Remove any attributes for security, except for basic styling
-      return `<${slash}${tagName}>`;
-    }
-    // Escape disallowed tags
-    return match.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  });
-}
-
-function getIndent(line) {
-  const match = line.match(/^(\s*)/);
-  return match ? match[1].length : 0;
-}
-
-function convertMarkdownToHtml(markdown) {
-  const processInline = (text) => {
-    if (!text) return '';
-    return text
-      .replace(/\*\*\*(.*?)\*\*\*/g, '<strong><em>$1</em></strong>')
-      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-      .replace(/\*(.*?)\*/g, '<em>$1</em>')
-      .replace(/`([^`]+)`/g, '<code>$1</code>');
-  };
-
-  const lines = markdown.trim().split('\n');
-  let html = '';
-  let i = 0;
-
-  while (i < lines.length) {
-    const line = lines[i];
-
-    // Headers (with support for YOU: prefix)
-    const headerMatch = line.match(/^(\s*(?:\*\*(?:YOU):\*\*\s*)?)(#{1,6})\s+(.*)$/);
-    if (headerMatch) {
-      const prefix = headerMatch[1];
-      const hashes = headerMatch[2];
-      const content = headerMatch[3];
-      const level = hashes.length;
-
-      html += `<h${level}>${prefix ? processInline(prefix) : ''}${processInline(content)}</h${level}>\n`;
-      i++;
-      continue;
-    }
-
-    // Horizontal Rule
-    if (line.match(/^-{3,}$/)) {
-      html += '<hr>\n';
-      i++;
-      continue;
-    }
-
-    // Code blocks
-    if (line.startsWith('```')) {
-      let codeBlockContent = '';
-      i++;
-      while (i < lines.length && !lines[i].startsWith('```')) {
-        codeBlockContent += lines[i] + '\n';
-        i++;
+  /**
+   * Change font size with validation and bounds checking
+   */
+  function changeFontSize(uniqueId, delta) {
+    try {
+      const win = floatingWindows.get(uniqueId); // ShadowRoot
+      if (!win) {
+        console.log(`[Content] Window ${uniqueId} already closed, skipping font size change`);
+        return;
       }
-      html += `<pre><code>${escapeHtml(codeBlockContent.trim())}</code></pre>\n`;
-      i++; // Skip closing ```
-      continue;
+
+      const content = win.querySelector(`#content-${uniqueId}`);
+      if (!content) {
+        console.log(`[Content] Content element not found for window ${uniqueId} (window closed)`);
+        return;
+      }
+
+      const currentSize = textSizes.get(uniqueId) || UI_CONFIG.DEFAULT_FONT_SIZE;
+      let newSize = currentSize + delta;
+
+      // Enforce bounds
+      newSize = Math.max(UI_CONFIG.MIN_FONT_SIZE, Math.min(UI_CONFIG.MAX_FONT_SIZE, newSize));
+
+      if (newSize !== currentSize) {
+        textSizes.set(uniqueId, newSize);
+        content.style.fontSize = `${newSize}px`;
+        chrome.storage.sync.set({ defaultFontSize: newSize });
+        console.log(`[Content] Font size changed and saved: ${newSize}px`);
+      }
+    } catch (error) {
+      console.error('[Content] Error changing font size:', error);
+    }
+  }
+
+  /**
+   * Toggle window minimize state with improved state management
+   */
+  function toggleMinimize(uniqueId) {
+    try {
+      const wrapper = floatingWindows.get(uniqueId); // ShadowRoot
+      if (!wrapper) {
+        console.log(`[Content] Window ${uniqueId} already closed, skipping minimize toggle`);
+        return;
+      }
+      const win = wrapper.querySelector(`#floating-window-${uniqueId}`);
+      const content = win.querySelector(`#content-${uniqueId}`);
+      const handle = win.querySelector(`#resize-handle-${uniqueId}`);
+      const minimizeBtn = win.querySelector(`#minimize-btn-${uniqueId}`);
+
+      if (!content || !handle || !win) {
+        console.log(`[Content] Required elements not found for window ${uniqueId} (window closed)`);
+        return;
+      }
+
+      const isCurrentlyMinimized = isMinimized.get(uniqueId) || false;
+
+      if (isCurrentlyMinimized) {
+        // Restore window
+        const lastSize = windowSizes.get(uniqueId);
+        content.style.display = ''; // Restore to default display
+        handle.style.display = 'block';
+        if (lastSize) {
+          win.style.height = `${lastSize.height}px`;
+        }
+        if (minimizeBtn) minimizeBtn.textContent = '−';
+        if (minimizeBtn) minimizeBtn.title = 'Minimize';
+        isMinimized.set(uniqueId, false);
+        console.log(`[Content] Restored window ${uniqueId}`);
+      } else {
+        // Minimize window
+        windowSizes.set(uniqueId, { width: win.offsetWidth, height: win.offsetHeight });
+        content.style.display = 'none';
+        handle.style.display = 'none';
+        win.style.height = 'auto'; // Let the title bar define the height
+        if (minimizeBtn) minimizeBtn.textContent = '□';
+        if (minimizeBtn) minimizeBtn.title = 'Restore';
+        isMinimized.set(uniqueId, true);
+        console.log(`[Content] Minimized window ${uniqueId}`);
+      }
+    } catch (error) {
+      console.error('[Content] Error toggling minimize:', error);
+    }
+  }
+
+  /**
+   * Handle incoming messages with improved content sanitization
+   */
+  function handleMessage(content, uniqueId) {
+    try {
+      const win = floatingWindows.get(uniqueId); // ShadowRoot
+      if (!win) {
+        // This is expected when window is already closed - no need to warn
+        console.log(`[Content] Window ${uniqueId} already closed, skipping message`);
+        return;
+      }
+
+      const contentElement = win.querySelector(`#content-${uniqueId}`);
+      if (!contentElement) {
+        console.log(`[Content] Content element not found for window ${uniqueId} (window closed)`);
+        return;
+      }
+
+      let currentBuffer = contentBuffers.get(uniqueId) || '';
+      currentBuffer += content;
+      contentBuffers.set(uniqueId, currentBuffer);
+
+      // Set flag to ignore scroll events during content update
+      isContentUpdating.set(uniqueId, true);
+
+      // Save scroll position before updating content (for users who scrolled up)
+      const savedScrollTop = contentElement.scrollTop;
+      const wasScrolledUp = userScrolledUp.get(uniqueId);
+
+      // Sanitize and render the entire buffer
+      contentElement.innerHTML = sanitizeContent(currentBuffer);
+
+      // Handle scroll based on user state
+      if (!wasScrolledUp) {
+        // Auto-scroll to bottom
+        requestAnimationFrame(() => {
+          contentElement.scrollTop = contentElement.scrollHeight;
+          // Reset flag after scroll is applied
+          isContentUpdating.set(uniqueId, false);
+        });
+      } else {
+        // Restore previous scroll position to prevent text drift
+        requestAnimationFrame(() => {
+          contentElement.scrollTop = savedScrollTop;
+          isContentUpdating.set(uniqueId, false);
+          // Update button visibility when user is scrolled up
+          updateScrollButtonVisibility(uniqueId);
+        });
+      }
+
+
+      // Apply current font size
+      const currentFontSize = textSizes.get(uniqueId) || UI_CONFIG.DEFAULT_FONT_SIZE;
+      contentElement.style.fontSize = `${currentFontSize}px`;
+
+      // Auto-restore if minimized
+      if (isMinimized.get(uniqueId)) {
+        console.log(`[Content] Auto-restoring minimized window ${uniqueId}`);
+        toggleMinimize(uniqueId);
+      }
+
+    } catch (error) {
+      console.error('[Content] Error handling message:', error);
+    }
+  }
+
+
+  /**
+   * Convert markdown to HTML and sanitize content
+   */
+  function sanitizeContent(content) {
+    if (typeof content !== 'string') {
+      return String(content || '');
     }
 
-    // Lists (with support for YOU: prefix)
-    const listMatch = line.match(/^(\s*(?:\*\*(?:YOU):\*\*\s*)?)([-*]|\d+\.)\s+(.*)$/);
-    if (listMatch) {
-      let listHtml = '';
-      const listStack = [];
+    // Convert markdown to HTML
+    let html = convertMarkdownToHtml(content);
 
-      while (i < lines.length) {
-        const currentLine = lines[i];
-        const itemMatch = currentLine.match(/^(\s*(?:\*\*(?:YOU):\*\*\s*)?)([-*]|\d+\.)\s+(.*)$/);
+    // Allow basic formatting tags but escape potentially dangerous content
+    const allowedTags = ['b', 'i', 'em', 'strong', 'br', 'p', 'div', 'span', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol', 'li', 'code', 'pre', 'blockquote', 'hr'];
+    const tagRegex = /<(\/?)(\w+)([^>]*)>/gi;
 
-        if (!itemMatch && !currentLine.match(/^\s+.*$/)) break;
+    return html.replace(tagRegex, (match, slash, tagName, attributes) => {
+      if (allowedTags.includes(tagName.toLowerCase())) {
+        // Remove any attributes for security, except for basic styling
+        return `<${slash}${tagName}>`;
+      }
+      // Escape disallowed tags
+      return match.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    });
+  }
 
-        if (itemMatch) {
-          const prefix = itemMatch[1];
-          const marker = itemMatch[2];
-          let content = itemMatch[3];
-          const indent = (prefix ? prefix.length : 0) + (itemMatch[1].match(/^\s*/) ? itemMatch[1].match(/^\s*/)[0].length : 0);
-          const type = marker.match(/\d/) ? 'ol' : 'ul';
+  function getIndent(line) {
+    const match = line.match(/^(\s*)/);
+    return match ? match[1].length : 0;
+  }
 
-          // Look ahead for multi-line list items
-          let nextIndex = i + 1;
-          while (nextIndex < lines.length && lines[nextIndex].match(/^\s{2,}/) && !lines[nextIndex].match(/^(\s*(?:\*\*(?:YOU):\*\*\s*)?)([-*]|\d+\.)\s/)) {
-            content += ' ' + lines[nextIndex].trim();
-            nextIndex++;
-          }
+  function convertMarkdownToHtml(markdown) {
+    const processInline = (text) => {
+      if (!text) return '';
+      return text
+        .replace(/\*\*\*(.*?)\*\*\*/g, '<strong><em>$1</em></strong>')
+        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*(.*?)\*/g, '<em>$1</em>')
+        .replace(/`([^`]+)`/g, '<code>$1</code>');
+    };
 
-          while (listStack.length > 0 && indent < listStack[listStack.length - 1].indent) {
-            listHtml += `</${listStack.pop().type}>\n`;
-          }
-          if (listStack.length === 0 || indent > listStack[listStack.length - 1].indent || type !== listStack[listStack.length - 1].type) {
-            if (listStack.length > 0 && listStack[listStack.length - 1].type !== type) {
-              listHtml += `</${listStack.pop().type}>\n`;
-            }
-            listHtml += `<${type}>\n`;
-            listStack.push({ type, indent });
-          }
-          listHtml += `<li>${prefix ? processInline(prefix) : ''}${processInline(content)}</li>\n`;
-          i = nextIndex;
-        } else {
+    const lines = markdown.trim().split('\n');
+    let html = '';
+    let i = 0;
+
+    while (i < lines.length) {
+      const line = lines[i];
+
+      // Headers (with support for YOU: prefix)
+      const headerMatch = line.match(/^(\s*(?:\*\*(?:YOU):\*\*\s*)?)(#{1,6})\s+(.*)$/);
+      if (headerMatch) {
+        const prefix = headerMatch[1];
+        const hashes = headerMatch[2];
+        const content = headerMatch[3];
+        const level = hashes.length;
+
+        html += `<h${level}>${prefix ? processInline(prefix) : ''}${processInline(content)}</h${level}>\n`;
+        i++;
+        continue;
+      }
+
+      // Horizontal Rule
+      if (line.match(/^-{3,}$/)) {
+        html += '<hr>\n';
+        i++;
+        continue;
+      }
+
+      // Code blocks
+      if (line.startsWith('```')) {
+        let codeBlockContent = '';
+        i++;
+        while (i < lines.length && !lines[i].startsWith('```')) {
+          codeBlockContent += lines[i] + '\n';
           i++;
         }
+        html += `<pre><code>${escapeHtml(codeBlockContent.trim())}</code></pre>\n`;
+        i++; // Skip closing ```
+        continue;
       }
-      while (listStack.length > 0) {
-        listHtml += `</${listStack.pop().type}>\n`;
+
+      // Lists (with support for YOU: prefix)
+      const listMatch = line.match(/^(\s*(?:\*\*(?:YOU):\*\*\s*)?)([-*]|\d+\.)\s+(.*)$/);
+      if (listMatch) {
+        let listHtml = '';
+        const listStack = [];
+
+        while (i < lines.length) {
+          const currentLine = lines[i];
+          const itemMatch = currentLine.match(/^(\s*(?:\*\*(?:YOU):\*\*\s*)?)([-*]|\d+\.)\s+(.*)$/);
+
+          if (!itemMatch && !currentLine.match(/^\s+.*$/)) break;
+
+          if (itemMatch) {
+            const prefix = itemMatch[1];
+            const marker = itemMatch[2];
+            let content = itemMatch[3];
+            const indent = (prefix ? prefix.length : 0) + (itemMatch[1].match(/^\s*/) ? itemMatch[1].match(/^\s*/)[0].length : 0);
+            const type = marker.match(/\d/) ? 'ol' : 'ul';
+
+            // Look ahead for multi-line list items
+            let nextIndex = i + 1;
+            while (nextIndex < lines.length && lines[nextIndex].match(/^\s{2,}/) && !lines[nextIndex].match(/^(\s*(?:\*\*(?:YOU):\*\*\s*)?)([-*]|\d+\.)\s/)) {
+              content += ' ' + lines[nextIndex].trim();
+              nextIndex++;
+            }
+
+            while (listStack.length > 0 && indent < listStack[listStack.length - 1].indent) {
+              listHtml += `</${listStack.pop().type}>\n`;
+            }
+            if (listStack.length === 0 || indent > listStack[listStack.length - 1].indent || type !== listStack[listStack.length - 1].type) {
+              if (listStack.length > 0 && listStack[listStack.length - 1].type !== type) {
+                listHtml += `</${listStack.pop().type}>\n`;
+              }
+              listHtml += `<${type}>\n`;
+              listStack.push({ type, indent });
+            }
+            listHtml += `<li>${prefix ? processInline(prefix) : ''}${processInline(content)}</li>\n`;
+            i = nextIndex;
+          } else {
+            i++;
+          }
+        }
+        while (listStack.length > 0) {
+          listHtml += `</${listStack.pop().type}>\n`;
+        }
+        html += listHtml;
+        continue;
       }
-      html += listHtml;
-      continue;
+
+      // Paragraphs
+      if (line.trim()) {
+        let paragraphContent = line;
+        while (i + 1 < lines.length && lines[i + 1].trim() && !lines[i + 1].match(/^-{3,}$/) && !lines[i + 1].match(/^#{1,6}\s/) && !lines[i + 1].match(/^(\s*)([-*]|\d+\.)\s/)) {
+          paragraphContent += '<br>' + lines[i + 1];
+          i++;
+        }
+        html += `<p>${processInline(paragraphContent)}</p>\n`;
+      }
+      i++;
     }
 
-    // Paragraphs
-    if (line.trim()) {
-      let paragraphContent = line;
-      while (i + 1 < lines.length && lines[i + 1].trim() && !lines[i + 1].match(/^-{3,}$/) && !lines[i + 1].match(/^#{1,6}\s/) && !lines[i + 1].match(/^(\s*)([-*]|\d+\.)\s/)) {
-        paragraphContent += '<br>' + lines[i + 1];
-        i++;
-      }
-      html += `<p>${processInline(paragraphContent)}</p>\n`;
-    }
-    i++;
+    return html.trim();
   }
 
-  return html.trim();
-}
-
-/**
- * Escape HTML characters
- */
-function escapeHtml(text) {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-}
-
-/**
- * Show loading indicator with error handling
- */
-function showLoading(uniqueId) {
-  try {
-    const win = floatingWindows.get(uniqueId); // ShadowRoot
-    if (!win) {
-      console.log(`[Content] Window ${uniqueId} already closed, skipping loading display`);
-      return;
-    }
-
-    const loadingOverlay = win.querySelector(`#loading-overlay-${uniqueId}`);
-    if (loadingOverlay) {
-      loadingOverlay.style.display = 'flex';
-    }
-  } catch (error) {
-    console.error('[Content] Error showing loading:', error);
+  /**
+   * Escape HTML characters
+   */
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
   }
-}
 
-/**
- * Hide loading indicator with error handling
- */
-function hideLoading(uniqueId) {
-  try {
-    const win = floatingWindows.get(uniqueId); // ShadowRoot
-    if (!win) {
-      // This is expected when window is already closed - no need to warn
-      console.log(`[Content] Window ${uniqueId} already closed, skipping loading hide`);
-      return;
-    }
+  /**
+   * Show loading indicator with error handling
+   */
+  function showLoading(uniqueId) {
+    try {
+      const win = floatingWindows.get(uniqueId); // ShadowRoot
+      if (!win) {
+        console.log(`[Content] Window ${uniqueId} already closed, skipping loading display`);
+        return;
+      }
 
-    const loadingOverlay = win.querySelector(`#loading-overlay-${uniqueId}`);
-    if (loadingOverlay) {
-      loadingOverlay.style.display = 'none';
+      const loadingOverlay = win.querySelector(`#loading-overlay-${uniqueId}`);
+      if (loadingOverlay) {
+        loadingOverlay.style.display = 'flex';
+      }
+    } catch (error) {
+      console.error('[Content] Error showing loading:', error);
     }
-  } catch (error) {
-    console.error('[Content] Error hiding loading:', error);
   }
-}
 
-function makeDraggable(uniqueId, el, handle) {
-  let x0 = 0, y0 = 0, x1 = 0, y1 = 0;
-  handle.onpointerdown = e => { // Changed from onmousedown
-    e.preventDefault();
-    e.target.setPointerCapture(e.pointerId); // Capture pointer events
-    x1 = e.clientX; y1 = e.clientY;
+  /**
+   * Hide loading indicator with error handling
+   */
+  function hideLoading(uniqueId) {
+    try {
+      const win = floatingWindows.get(uniqueId); // ShadowRoot
+      if (!win) {
+        // This is expected when window is already closed - no need to warn
+        console.log(`[Content] Window ${uniqueId} already closed, skipping loading hide`);
+        return;
+      }
 
-    const drag = (e) => { // Defined drag function inside pointerdown for proper scope
+      const loadingOverlay = win.querySelector(`#loading-overlay-${uniqueId}`);
+      if (loadingOverlay) {
+        loadingOverlay.style.display = 'none';
+      }
+    } catch (error) {
+      console.error('[Content] Error hiding loading:', error);
+    }
+  }
+
+  function makeDraggable(uniqueId, el, handle) {
+    let x0 = 0, y0 = 0, x1 = 0, y1 = 0;
+    handle.onpointerdown = e => { // Changed from onmousedown
       e.preventDefault();
-      x0 = x1 - e.clientX; y0 = y1 - e.clientY;
+      e.target.setPointerCapture(e.pointerId); // Capture pointer events
       x1 = e.clientX; y1 = e.clientY;
-      el.style.top = (el.offsetTop - y0) + 'px';
-      el.style.left = (el.offsetLeft - x0) + 'px';
+
+      const drag = (e) => { // Defined drag function inside pointerdown for proper scope
+        e.preventDefault();
+        x0 = x1 - e.clientX; y0 = y1 - e.clientY;
+        x1 = e.clientX; y1 = e.clientY;
+        el.style.top = (el.offsetTop - y0) + 'px';
+        el.style.left = (el.offsetLeft - x0) + 'px';
+      };
+
+      const stopDrag = (e) => { // Defined stopDrag function
+        e.target.releasePointerCapture(e.pointerId); // Release pointer capture
+        window.removeEventListener('pointermove', drag);
+        window.removeEventListener('pointerup', stopDrag);
+
+        const isMin = isMinimized.get(uniqueId);
+
+        let heightToSave = el.offsetHeight;
+        if (isMin && windowSizes.has(uniqueId)) {
+          // If minimized, use the stored full height instead of the current title-bar height
+          heightToSave = windowSizes.get(uniqueId).height;
+        }
+
+        chrome.storage.local.set({ windowState: { top: el.offsetTop, left: el.offsetLeft, width: el.offsetWidth, height: heightToSave } });
+      };
+
+      window.addEventListener('pointermove', drag);
+      window.addEventListener('pointerup', stopDrag, { once: true });
     };
+  }
 
-    const stopDrag = (e) => { // Defined stopDrag function
-      e.target.releasePointerCapture(e.pointerId); // Release pointer capture
-      window.removeEventListener('pointermove', drag);
-      window.removeEventListener('pointerup', stopDrag);
+  function makeResizable(el, handle) {
+    handle.onpointerdown = (e) => { // Changed from onmousedown
+      e.preventDefault();
+      e.target.setPointerCapture(e.pointerId); // Capture pointer events
 
-      const isMin = isMinimized.get(uniqueId);
+      const resize = (e) => { // Defined resize function inside pointerdown
+        const newWidth = Math.max(UI_CONFIG.MIN_WIDTH, e.clientX - el.offsetLeft);
+        const newHeight = Math.max(UI_CONFIG.MIN_HEIGHT, e.clientY - el.offsetTop);
+        el.style.width = newWidth + 'px';
+        el.style.height = newHeight + 'px';
+      };
 
-      let heightToSave = el.offsetHeight;
-      if (isMin && windowSizes.has(uniqueId)) {
-        // If minimized, use the stored full height instead of the current title-bar height
-        heightToSave = windowSizes.get(uniqueId).height;
+      const stopResize = (e) => { // Defined stopResize function
+        e.target.releasePointerCapture(e.pointerId); // Release pointer capture
+        window.removeEventListener('pointermove', resize);
+        window.removeEventListener('pointerup', stopResize);
+        chrome.storage.local.set({ windowState: { top: el.offsetTop, left: el.offsetLeft, width: el.offsetWidth, height: el.offsetHeight } });
+      };
+
+      window.addEventListener('pointermove', resize);
+      window.addEventListener('pointerup', stopResize, { once: true });
+    };
+  }
+
+  // ———— Chat Functionality ————
+
+  function handleStreamEnd(request) {
+    const { uniqueId, fullResponse, originalContext } = request;
+
+    // Initialize history if not present
+    if (!chatHistories.has(uniqueId)) {
+      chatHistories.set(uniqueId, []);
+    }
+    const history = chatHistories.get(uniqueId);
+
+    // If originalContext is provided (initial request), add it first
+    if (originalContext && history.length === 0) {
+      history.push({ role: 'user', content: originalContext });
+    }
+
+    // Add the assistant's response
+    history.push({ role: 'assistant', content: fullResponse });
+
+    const win = floatingWindows.get(uniqueId); // ShadowRoot
+    if (win) {
+      // Final auto-scroll check to ensure it ends at the bottom
+      const contentElement = win.querySelector(`#content-${uniqueId}`);
+      if (contentElement && !userScrolledUp.get(uniqueId)) {
+        requestAnimationFrame(() => {
+          contentElement.scrollTop = contentElement.scrollHeight;
+        });
       }
 
-      chrome.storage.local.set({ windowState: { top: el.offsetTop, left: el.offsetLeft, width: el.offsetWidth, height: heightToSave } });
-    };
-
-    window.addEventListener('pointermove', drag);
-    window.addEventListener('pointerup', stopDrag, { once: true });
-  };
-}
-
-function makeResizable(el, handle) {
-  handle.onpointerdown = (e) => { // Changed from onmousedown
-    e.preventDefault();
-    e.target.setPointerCapture(e.pointerId); // Capture pointer events
-
-    const resize = (e) => { // Defined resize function inside pointerdown
-      const newWidth = Math.max(UI_CONFIG.MIN_WIDTH, e.clientX - el.offsetLeft);
-      const newHeight = Math.max(UI_CONFIG.MIN_HEIGHT, e.clientY - el.offsetTop);
-      el.style.width = newWidth + 'px';
-      el.style.height = newHeight + 'px';
-    };
-
-    const stopResize = (e) => { // Defined stopResize function
-      e.target.releasePointerCapture(e.pointerId); // Release pointer capture
-      window.removeEventListener('pointermove', resize);
-      window.removeEventListener('pointerup', stopResize);
-      chrome.storage.local.set({ windowState: { top: el.offsetTop, left: el.offsetLeft, width: el.offsetWidth, height: el.offsetHeight } });
-    };
-
-    window.addEventListener('pointermove', resize);
-    window.addEventListener('pointerup', stopResize, { once: true });
-  };
-}
-
-// ———— Chat Functionality ————
-
-function handleStreamEnd(request) {
-  const { uniqueId, fullResponse, originalContext } = request;
-
-  // Initialize history if not present
-  if (!chatHistories.has(uniqueId)) {
-    chatHistories.set(uniqueId, []);
-  }
-  const history = chatHistories.get(uniqueId);
-
-  // If originalContext is provided (initial request), add it first
-  if (originalContext && history.length === 0) {
-    history.push({ role: 'user', content: originalContext });
-  }
-
-  // Add the assistant's response
-  history.push({ role: 'assistant', content: fullResponse });
-
-  const win = floatingWindows.get(uniqueId); // ShadowRoot
-  if (win) {
-    // Final auto-scroll check to ensure it ends at the bottom
-    const contentElement = win.querySelector(`#content-${uniqueId}`);
-    if (contentElement && !userScrolledUp.get(uniqueId)) {
-      requestAnimationFrame(() => {
-        contentElement.scrollTop = contentElement.scrollHeight;
-      });
+      // Enable chat input
+      const input = win.querySelector(`#chat-input-${uniqueId}`);
+      const btn = win.querySelector(`#chat-send-${uniqueId}`);
+      if (input) {
+        input.disabled = false;
+        input.placeholder = chrome.i18n.getMessage('placeholderFollowUp') || "Ask a follow-up...";
+      }
+      if (btn) btn.disabled = false;
     }
 
-    // Enable chat input
+    isChatProcessing.set(uniqueId, false);
+  }
+
+  function setupChatListeners(uniqueId, win) {
     const input = win.querySelector(`#chat-input-${uniqueId}`);
-    const btn = win.querySelector(`#chat-send-${uniqueId}`);
-    if (input) {
-      input.disabled = false;
-      input.placeholder = chrome.i18n.getMessage('placeholderFollowUp') || "Ask a follow-up...";
-    }
-    if (btn) btn.disabled = false;
-  }
+    const sendBtn = win.querySelector(`#chat-send-${uniqueId}`);
+    const dropdown = win.querySelector(`#slash-dropdown-${uniqueId}`);
 
-  isChatProcessing.set(uniqueId, false);
-}
+    const submit = () => {
+      const selected = selectedSlashCommand.get(uniqueId);
+      let textToSend = '';
 
-function setupChatListeners(uniqueId, win) {
-  const input = win.querySelector(`#chat-input-${uniqueId}`);
-  const sendBtn = win.querySelector(`#chat-send-${uniqueId}`);
-  const dropdown = win.querySelector(`#slash-dropdown-${uniqueId}`);
+      if (selected) {
+        textToSend = selected.prompt;
+      } else {
+        textToSend = input ? input.value.trim() : '';
+      }
 
-  const submit = () => {
-    const selected = selectedSlashCommand.get(uniqueId);
-    let textToSend = '';
+      if (textToSend && !isChatProcessing.get(uniqueId)) {
+        sendFollowUp(uniqueId, textToSend);
+        const clearBtn = win.querySelector(`#clear-command-${uniqueId}`);
+        if (input) {
+          input.value = '';
+          input.classList.remove('command-locked');
+          input.readOnly = false;
+        }
+        if (clearBtn) {
+          clearBtn.style.display = 'none';
+        }
+        selectedSlashCommand.set(uniqueId, null);
+        hideSlashDropdown(uniqueId);
+      }
+    };
 
-    if (selected) {
-      textToSend = selected.prompt;
-    } else {
-      textToSend = input ? input.value.trim() : '';
-    }
+    const hideSlashDropdown = (id) => {
+      const dd = win.querySelector(`#slash-dropdown-${id}`);
+      if (dd) dd.style.display = 'none';
+      dropdownSelectedIndex.set(id, -1);
+    };
 
-    if (textToSend && !isChatProcessing.get(uniqueId)) {
-      sendFollowUp(uniqueId, textToSend);
-      const clearBtn = win.querySelector(`#clear-command-${uniqueId}`);
+    const showSlashDropdown = (id, filterText) => {
+      const dd = win.querySelector(`#slash-dropdown-${id}`);
+      if (!dd) return;
+
+      const commands = slashCommandsCache.get(id) || [];
+      const filter = filterText.toLowerCase();
+      const filtered = commands.filter(cmd =>
+        cmd.command.toLowerCase().startsWith(filter)
+      );
+
+      dd.innerHTML = '';
+
+      if (filtered.length === 0) {
+        dd.innerHTML = `<div class="slash-empty">${chrome.i18n.getMessage('emptyDropdown') || 'No commands found. Configure in extension options.'}</div>`;
+      } else {
+        filtered.forEach((cmd, idx) => {
+          const item = document.createElement('div');
+          item.className = 'slash-item';
+          item.dataset.command = cmd.command;
+          item.dataset.index = idx;
+          item.textContent = '/' + cmd.command;
+
+          item.addEventListener('click', () => {
+            selectSlashCommand(id, cmd);
+          });
+
+          dd.appendChild(item);
+        });
+      }
+
+      dd.style.display = 'block';
+      dropdownSelectedIndex.set(id, -1);
+    };
+
+    const selectSlashCommand = (id, cmd) => {
+      selectedSlashCommand.set(id, cmd);
+      const clearBtn = win.querySelector(`#clear-command-${id}`);
+      if (input) {
+        input.value = '/' + cmd.command;
+        input.classList.add('command-locked');
+        input.readOnly = true;
+      }
+      if (clearBtn) {
+        clearBtn.style.display = 'block';
+      }
+      hideSlashDropdown(id);
+    };
+
+    const unlockInput = (id) => {
+      selectedSlashCommand.set(id, null);
+      const clearBtn = win.querySelector(`#clear-command-${id}`);
       if (input) {
         input.value = '';
         input.classList.remove('command-locked');
         input.readOnly = false;
+        input.focus();
       }
       if (clearBtn) {
         clearBtn.style.display = 'none';
       }
-      selectedSlashCommand.set(uniqueId, null);
-      hideSlashDropdown(uniqueId);
-    }
-  };
+    };
 
-  const hideSlashDropdown = (id) => {
-    const dd = win.querySelector(`#slash-dropdown-${id}`);
-    if (dd) dd.style.display = 'none';
-    dropdownSelectedIndex.set(id, -1);
-  };
+    const updateDropdownSelection = (id, direction) => {
+      const dd = win.querySelector(`#slash-dropdown-${id}`);
+      if (!dd || dd.style.display === 'none') return;
 
-  const showSlashDropdown = (id, filterText) => {
-    const dd = win.querySelector(`#slash-dropdown-${id}`);
-    if (!dd) return;
+      const items = dd.querySelectorAll('.slash-item');
+      if (items.length === 0) return;
 
-    const commands = slashCommandsCache.get(id) || [];
-    const filter = filterText.toLowerCase();
-    const filtered = commands.filter(cmd =>
-      cmd.command.toLowerCase().startsWith(filter)
-    );
+      let currentIdx = dropdownSelectedIndex.get(id);
+      items.forEach(item => item.classList.remove('selected'));
 
-    dd.innerHTML = '';
+      if (direction === 'down') {
+        currentIdx = currentIdx < items.length - 1 ? currentIdx + 1 : 0;
+      } else {
+        currentIdx = currentIdx > 0 ? currentIdx - 1 : items.length - 1;
+      }
 
-    if (filtered.length === 0) {
-      dd.innerHTML = `<div class="slash-empty">${chrome.i18n.getMessage('emptyDropdown') || 'No commands found. Configure in extension options.'}</div>`;
-    } else {
-      filtered.forEach((cmd, idx) => {
-        const item = document.createElement('div');
-        item.className = 'slash-item';
-        item.dataset.command = cmd.command;
-        item.dataset.index = idx;
-        item.textContent = '/' + cmd.command;
+      dropdownSelectedIndex.set(id, currentIdx);
+      items[currentIdx].classList.add('selected');
+      items[currentIdx].scrollIntoView({ block: 'nearest' });
+    };
 
-        item.addEventListener('click', () => {
-          selectSlashCommand(id, cmd);
-        });
+    const confirmDropdownSelection = (id) => {
+      const dd = win.querySelector(`#slash-dropdown-${id}`);
+      if (!dd || dd.style.display === 'none') return false;
 
-        dd.appendChild(item);
+      const idx = dropdownSelectedIndex.get(id);
+      if (idx >= 0) {
+        const items = dd.querySelectorAll('.slash-item');
+        if (items[idx]) {
+          const cmdName = items[idx].dataset.command;
+          const commands = slashCommandsCache.get(id) || [];
+          const cmd = commands.find(c => c.command === cmdName);
+          if (cmd) {
+            selectSlashCommand(id, cmd);
+            return true;
+          }
+        }
+      }
+      return false;
+    };
+
+    const checkExactMatch = (id, value) => {
+      if (!value.startsWith('/')) return;
+      const cmdName = value.substring(1).toLowerCase();
+      const commands = slashCommandsCache.get(id) || [];
+      const match = commands.find(c => c.command.toLowerCase() === cmdName);
+      if (match) {
+        selectSlashCommand(id, match);
+      }
+    };
+
+    if (input) {
+      input.addEventListener('keydown', (e) => {
+        e.stopPropagation();
+
+        const isLocked = selectedSlashCommand.get(uniqueId) !== null;
+        const dd = win.querySelector(`#slash-dropdown-${uniqueId}`);
+        const dropdownVisible = dd && dd.style.display !== 'none';
+
+        if (isLocked && (e.key === 'Backspace' || e.key === 'Delete')) {
+          e.preventDefault();
+          unlockInput(uniqueId);
+          return;
+        }
+
+        if (dropdownVisible) {
+          if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            updateDropdownSelection(uniqueId, 'down');
+            return;
+          }
+          if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            updateDropdownSelection(uniqueId, 'up');
+            return;
+          }
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            if (confirmDropdownSelection(uniqueId)) {
+              return;
+            }
+            submit();
+            return;
+          }
+          if (e.key === 'Escape') {
+            e.preventDefault();
+            hideSlashDropdown(uniqueId);
+            input.value = '';
+            return;
+          }
+        } else {
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            submit();
+            return;
+          }
+        }
+      });
+
+      input.addEventListener('input', (e) => {
+        const value = e.target.value;
+
+        if (value.startsWith('/') && value.length >= 1) {
+          const filterText = value.substring(1);
+          showSlashDropdown(uniqueId, filterText);
+
+          if (filterText.length > 0) {
+            checkExactMatch(uniqueId, value);
+          }
+        } else {
+          hideSlashDropdown(uniqueId);
+        }
+      });
+
+      input.addEventListener('keyup', (e) => e.stopPropagation());
+      input.addEventListener('keypress', (e) => e.stopPropagation());
+
+      input.addEventListener('blur', () => {
+        setTimeout(() => hideSlashDropdown(uniqueId), 150);
       });
     }
 
-    dd.style.display = 'block';
-    dropdownSelectedIndex.set(id, -1);
-  };
-
-  const selectSlashCommand = (id, cmd) => {
-    selectedSlashCommand.set(id, cmd);
-    const clearBtn = win.querySelector(`#clear-command-${id}`);
-    if (input) {
-      input.value = '/' + cmd.command;
-      input.classList.add('command-locked');
-      input.readOnly = true;
+    if (sendBtn) {
+      sendBtn.addEventListener('click', submit);
     }
+
+    const clearBtn = win.querySelector(`#clear-command-${uniqueId}`);
     if (clearBtn) {
-      clearBtn.style.display = 'block';
-    }
-    hideSlashDropdown(id);
-  };
-
-  const unlockInput = (id) => {
-    selectedSlashCommand.set(id, null);
-    const clearBtn = win.querySelector(`#clear-command-${id}`);
-    if (input) {
-      input.value = '';
-      input.classList.remove('command-locked');
-      input.readOnly = false;
-      input.focus();
-    }
-    if (clearBtn) {
-      clearBtn.style.display = 'none';
-    }
-  };
-
-  const updateDropdownSelection = (id, direction) => {
-    const dd = win.querySelector(`#slash-dropdown-${id}`);
-    if (!dd || dd.style.display === 'none') return;
-
-    const items = dd.querySelectorAll('.slash-item');
-    if (items.length === 0) return;
-
-    let currentIdx = dropdownSelectedIndex.get(id);
-    items.forEach(item => item.classList.remove('selected'));
-
-    if (direction === 'down') {
-      currentIdx = currentIdx < items.length - 1 ? currentIdx + 1 : 0;
-    } else {
-      currentIdx = currentIdx > 0 ? currentIdx - 1 : items.length - 1;
-    }
-
-    dropdownSelectedIndex.set(id, currentIdx);
-    items[currentIdx].classList.add('selected');
-    items[currentIdx].scrollIntoView({ block: 'nearest' });
-  };
-
-  const confirmDropdownSelection = (id) => {
-    const dd = win.querySelector(`#slash-dropdown-${id}`);
-    if (!dd || dd.style.display === 'none') return false;
-
-    const idx = dropdownSelectedIndex.get(id);
-    if (idx >= 0) {
-      const items = dd.querySelectorAll('.slash-item');
-      if (items[idx]) {
-        const cmdName = items[idx].dataset.command;
-        const commands = slashCommandsCache.get(id) || [];
-        const cmd = commands.find(c => c.command === cmdName);
-        if (cmd) {
-          selectSlashCommand(id, cmd);
-          return true;
-        }
-      }
-    }
-    return false;
-  };
-
-  const checkExactMatch = (id, value) => {
-    if (!value.startsWith('/')) return;
-    const cmdName = value.substring(1).toLowerCase();
-    const commands = slashCommandsCache.get(id) || [];
-    const match = commands.find(c => c.command.toLowerCase() === cmdName);
-    if (match) {
-      selectSlashCommand(id, match);
-    }
-  };
-
-  if (input) {
-    input.addEventListener('keydown', (e) => {
-      e.stopPropagation();
-
-      const isLocked = selectedSlashCommand.get(uniqueId) !== null;
-      const dd = win.querySelector(`#slash-dropdown-${uniqueId}`);
-      const dropdownVisible = dd && dd.style.display !== 'none';
-
-      if (isLocked && (e.key === 'Backspace' || e.key === 'Delete')) {
+      clearBtn.addEventListener('click', (e) => {
         e.preventDefault();
+        e.stopPropagation();
         unlockInput(uniqueId);
-        return;
-      }
-
-      if (dropdownVisible) {
-        if (e.key === 'ArrowDown') {
-          e.preventDefault();
-          updateDropdownSelection(uniqueId, 'down');
-          return;
-        }
-        if (e.key === 'ArrowUp') {
-          e.preventDefault();
-          updateDropdownSelection(uniqueId, 'up');
-          return;
-        }
-        if (e.key === 'Enter') {
-          e.preventDefault();
-          if (confirmDropdownSelection(uniqueId)) {
-            return;
-          }
-          submit();
-          return;
-        }
-        if (e.key === 'Escape') {
-          e.preventDefault();
-          hideSlashDropdown(uniqueId);
-          input.value = '';
-          return;
-        }
-      } else {
-        if (e.key === 'Enter' && !e.shiftKey) {
-          e.preventDefault();
-          submit();
-          return;
-        }
-      }
-    });
-
-    input.addEventListener('input', (e) => {
-      const value = e.target.value;
-
-      if (value.startsWith('/') && value.length >= 1) {
-        const filterText = value.substring(1);
-        showSlashDropdown(uniqueId, filterText);
-
-        if (filterText.length > 0) {
-          checkExactMatch(uniqueId, value);
-        }
-      } else {
-        hideSlashDropdown(uniqueId);
-      }
-    });
-
-    input.addEventListener('keyup', (e) => e.stopPropagation());
-    input.addEventListener('keypress', (e) => e.stopPropagation());
-
-    input.addEventListener('blur', () => {
-      setTimeout(() => hideSlashDropdown(uniqueId), 150);
-    });
-  }
-
-  if (sendBtn) {
-    sendBtn.addEventListener('click', submit);
-  }
-
-  const clearBtn = win.querySelector(`#clear-command-${uniqueId}`);
-  if (clearBtn) {
-    clearBtn.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      unlockInput(uniqueId);
-    });
-  }
-}
-
-function sendFollowUp(uniqueId, question) {
-  isChatProcessing.set(uniqueId, true);
-
-  // Disable input
-  const win = floatingWindows.get(uniqueId); // ShadowRoot
-  if (win) {
-    const input = win.querySelector(`#chat-input-${uniqueId}`);
-    const btn = win.querySelector(`#chat-send-${uniqueId}`);
-    if (input) {
-      input.disabled = true;
-      input.placeholder = chrome.i18n.getMessage('placeholderThinking') || "Thinking...";
+      });
     }
-    if (btn) btn.disabled = true;
-
-    // Format question - show /command for slash commands, otherwise text
-    const selected = selectedSlashCommand.get(uniqueId);
-    const displayQuestion = selected ? `/${selected.command}` : (question.startsWith('/') ? question.split('\n')[0] : question);
-    const formattedQuestion = `\n\n---\n**YOU:** ${displayQuestion}\n\n---\n`;
-
-    // Render question immediately
-    handleMessage(formattedQuestion, uniqueId);
   }
 
-  // Update history
-  if (!chatHistories.has(uniqueId)) {
-    chatHistories.set(uniqueId, []);
-  }
-  const history = chatHistories.get(uniqueId);
-  history.push({ role: 'user', content: question });
+  function sendFollowUp(uniqueId, question) {
+    isChatProcessing.set(uniqueId, true);
 
-  // Send to background
-  chrome.runtime.sendMessage({
-    action: 'submitFollowUp',
-    uniqueId: uniqueId,
-    messages: history
-  }, (response) => {
-    if (chrome.runtime.lastError) {
-      console.error('Error sending follow-up:', chrome.runtime.lastError.message);
-      isChatProcessing.set(uniqueId, false);
+    // Disable input
+    const win = floatingWindows.get(uniqueId); // ShadowRoot
+    if (win) {
+      const input = win.querySelector(`#chat-input-${uniqueId}`);
+      const btn = win.querySelector(`#chat-send-${uniqueId}`);
+      if (input) {
+        input.disabled = true;
+        input.placeholder = chrome.i18n.getMessage('placeholderThinking') || "Thinking...";
+      }
+      if (btn) btn.disabled = true;
+
+      // Format question - show /command for slash commands, otherwise text
+      const selected = selectedSlashCommand.get(uniqueId);
+      const displayQuestion = selected ? `/${selected.command}` : (question.startsWith('/') ? question.split('\n')[0] : question);
+      const formattedQuestion = `\n\n---\n**YOU:** ${displayQuestion}\n\n---\n`;
+
+      // Render question immediately
+      handleMessage(formattedQuestion, uniqueId);
     }
-  });
-}
+
+    // Update history
+    if (!chatHistories.has(uniqueId)) {
+      chatHistories.set(uniqueId, []);
+    }
+    const history = chatHistories.get(uniqueId);
+    history.push({ role: 'user', content: question });
+
+    // Send to background
+    chrome.runtime.sendMessage({
+      action: 'submitFollowUp',
+      uniqueId: uniqueId,
+      messages: history
+    }, (response) => {
+      if (chrome.runtime.lastError) {
+        console.error('Error sending follow-up:', chrome.runtime.lastError.message);
+        isChatProcessing.set(uniqueId, false);
+      }
+    });
+  }
+
+})();

@@ -40,7 +40,7 @@ const OpenAIAdapter = {
       'Authorization': `Bearer ${apiKey.trim()}`
     };
   },
-  
+
   transformRequest(messages, model, systemPrompt) {
     // OpenAI format: system message in messages array
     const formattedMessages = [];
@@ -54,7 +54,7 @@ const OpenAIAdapter = {
       stream: true
     };
   },
-  
+
   parseStreamChunk(jsonData) {
     // OpenAI: choices[0].delta.content for streaming
     if (jsonData.choices?.[0]?.delta?.content) {
@@ -66,7 +66,7 @@ const OpenAIAdapter = {
     }
     return null;
   },
-  
+
   isStreamEnd(data) {
     // OpenAI uses [DONE] signal (handled in processBuffer) or finish_reason
     return data === '[DONE]' || data?.choices?.[0]?.finish_reason === 'stop';
@@ -81,7 +81,7 @@ const AnthropicAdapter = {
       'anthropic-version': '2023-06-01'
     };
   },
-  
+
   transformRequest(messages, model, systemPrompt) {
     // Anthropic: system is a separate top-level field, not in messages
     // Messages must alternate user/assistant, no system role in messages
@@ -94,7 +94,7 @@ const AnthropicAdapter = {
       stream: true
     };
   },
-  
+
   parseStreamChunk(jsonData) {
     // Anthropic: content_block_delta with delta.text
     if (jsonData.type === 'content_block_delta' && jsonData.delta?.text) {
@@ -102,7 +102,7 @@ const AnthropicAdapter = {
     }
     return null;
   },
-  
+
   isStreamEnd(data) {
     // Anthropic: message_stop event or stop_reason
     return data?.type === 'message_stop' || data?.stop_reason;
@@ -117,7 +117,7 @@ const GeminiAdapter = {
       'x-goog-api-key': apiKey.trim()
     };
   },
-  
+
   transformRequest(messages, model, systemPrompt) {
     // Gemini: uses contents array with parts structure
     // System prompt goes in systemInstruction field
@@ -125,20 +125,20 @@ const GeminiAdapter = {
       role: msg.role === 'assistant' ? 'model' : msg.role,
       parts: [{ text: msg.content }]
     }));
-    
+
     const request = {
       contents: contents
     };
-    
+
     if (systemPrompt) {
       request.systemInstruction = {
         parts: [{ text: systemPrompt }]
       };
     }
-    
+
     return request;
   },
-  
+
   parseStreamChunk(jsonData) {
     // Gemini: candidates[0].content.parts[0].text
     if (jsonData.candidates?.[0]?.content?.parts?.[0]?.text) {
@@ -146,7 +146,7 @@ const GeminiAdapter = {
     }
     return null;
   },
-  
+
   isStreamEnd(data) {
     // Gemini: finishReason in candidates
     return data?.candidates?.[0]?.finishReason === 'STOP';
@@ -162,18 +162,18 @@ function getAdapter(provider, customFormat = null) {
     if (customFormat === 'gemini') return GeminiAdapter;
     return OpenAIAdapter; // Default for openai-compatible
   }
-  
+
   // Route based on provider name
   const providerLower = (provider || '').toLowerCase();
-  
+
   if (providerLower.includes('anthropic') || providerLower.includes('claude')) {
     return AnthropicAdapter;
   }
-  
+
   if (providerLower.includes('gemini') || providerLower.includes('google')) {
     return GeminiAdapter;
   }
-  
+
   // Default to OpenAI (works for OpenAI, Azure, Groq, and other OpenAI-compatible APIs)
   return OpenAIAdapter;
 }
@@ -209,7 +209,7 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
     // New: Slash command clicked from extension icon menu
     const index = parseInt(info.menuItemId.replace('slash-cmd-', ''), 10);
     console.log(`[Background] Slash command menu item clicked, index: ${index}`);
-    
+
     chrome.storage.sync.get(['slashCommands'], (result) => {
       const cmd = result.slashCommands?.[index];
       if (cmd) {
@@ -226,7 +226,7 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 
 async function setupContextMenu() {
   const { enableContextMenu, slashCommands } = await chrome.storage.sync.get(['enableContextMenu', 'slashCommands']);
-  
+
   // Default to true if not set (undefined)
   const isEnabled = enableContextMenu ?? true;
   const commands = slashCommands || [];
@@ -286,8 +286,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   } else if (request.action === 'submitFollowUp') {
     // Re-establish tab mapping if lost (e.g. due to Service Worker restart)
     if (sender.tab && sender.tab.id) {
-        // console.log(`[Background] Restoring tabId map for ${request.uniqueId} -> ${sender.tab.id}`);
-        tabIdMap.set(request.uniqueId, sender.tab.id);
+      // console.log(`[Background] Restoring tabId map for ${request.uniqueId} -> ${sender.tab.id}`);
+      tabIdMap.set(request.uniqueId, sender.tab.id);
     }
 
     // Handle follow-up question
@@ -351,118 +351,118 @@ async function handleIconClick(tab, directTextContent = null, customPrompt = nul
     }
 
     if (tab.url.includes('youtube.com/watch')) {
-    console.log('[Background] Detected YouTube watch page');
-    const match = tab.url.match(/[?&]v=([^&]+)/);
-    const videoId = match?.[1];
-    console.log('[Background] Parsed videoId:', videoId);
-    if (!videoId) {
-      chrome.tabs.sendMessage(tab.id, { action: 'hideLoading', uniqueId });
-      chrome.tabs.sendMessage(tab.id, {
-        action: 'appendToFloatingWindow',
-        content: '[Error] Could not extract video ID from the URL.',
-        uniqueId
-      });
-      return;
-    }
+      console.log('[Background] Detected YouTube watch page');
+      const match = tab.url.match(/[?&]v=([^&]+)/);
+      const videoId = match?.[1];
+      console.log('[Background] Parsed videoId:', videoId);
+      if (!videoId) {
+        chrome.tabs.sendMessage(tab.id, { action: 'hideLoading', uniqueId });
+        chrome.tabs.sendMessage(tab.id, {
+          action: 'appendToFloatingWindow',
+          content: '[Error] Could not extract video ID from the URL.',
+          uniqueId
+        });
+        return;
+      }
 
-    // Use the new content script that mimics the Python implementation
-    console.log('[Background] Injecting YouTube transcript extractor (Python-style)');
-    chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      files: ['scripts/content-scraper.js']
-    }, () => {
+      // Use the new content script that mimics the Python implementation
+      console.log('[Background] Injecting YouTube transcript extractor (Python-style)');
       chrome.scripting.executeScript({
         target: { tabId: tab.id },
-        function: () => extractYouTubeCaptions() // This function uses the Python approach
-      }, (results) => {
-        console.log('[Background] YouTube transcript extraction completed');
-        if (chrome.runtime.lastError) {
-          console.error('[Background] Script injection error:', chrome.runtime.lastError.message);
-          handleApiError(uniqueId, `Failed to extract content: ${chrome.runtime.lastError.message}`);
-          return;
-        }
+        files: ['scripts/content-scraper.js']
+      }, () => {
+        chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          function: () => extractYouTubeCaptions() // This function uses the Python approach
+        }, (results) => {
+          console.log('[Background] YouTube transcript extraction completed');
+          if (chrome.runtime.lastError) {
+            console.error('[Background] Script injection error:', chrome.runtime.lastError.message);
+            handleApiError(uniqueId, `Failed to extract content: ${chrome.runtime.lastError.message}`);
+            return;
+          }
 
-        if (results && results[0] && results[0].result) {
-          const transcriptText = results[0].result;
-          
-          // Enhanced logging for debugging
-          console.log('[Background] ===== TRANSCRIPT EXTRACTION DEBUG =====');
-          console.log('[Background] Result type:', typeof transcriptText);
-          console.log('[Background] Result length:', transcriptText?.length || 0);
-          
-          if (transcriptText && transcriptText.length > 0) {
-            console.log('[Background] First 200 chars:', transcriptText.substring(0, 200));
-            console.log('[Background] Last 200 chars:', transcriptText.substring(Math.max(0, transcriptText.length - 200)));
-            
-            // // Log full content without chunking
-            // console.log('[Background] ===== FULL TRANSCRIPT CONTENT =====');
-            // console.log('[Background] Full transcript:', transcriptText);
-            // console.log('[Background] ===== END TRANSCRIPT CONTENT =====');
-          }
-          console.log('[Background] ===== END TRANSCRIPT DEBUG =====');
-          
-          if (transcriptText && transcriptText.trim().length > 0) {
-            console.log('[Background] Successfully extracted transcript, length:', transcriptText.length);
-            makeApiCall(transcriptText, uniqueId, customPrompt, commandName);
+          if (results && results[0] && results[0].result) {
+            const transcriptText = results[0].result;
+
+            // Enhanced logging for debugging
+            console.log('[Background] ===== TRANSCRIPT EXTRACTION DEBUG =====');
+            console.log('[Background] Result type:', typeof transcriptText);
+            console.log('[Background] Result length:', transcriptText?.length || 0);
+
+            if (transcriptText && transcriptText.length > 0) {
+              console.log('[Background] First 200 chars:', transcriptText.substring(0, 200));
+              console.log('[Background] Last 200 chars:', transcriptText.substring(Math.max(0, transcriptText.length - 200)));
+
+              // // Log full content without chunking
+              // console.log('[Background] ===== FULL TRANSCRIPT CONTENT =====');
+              // console.log('[Background] Full transcript:', transcriptText);
+              // console.log('[Background] ===== END TRANSCRIPT CONTENT =====');
+            }
+            console.log('[Background] ===== END TRANSCRIPT DEBUG =====');
+
+            if (transcriptText && transcriptText.trim().length > 0) {
+              console.log('[Background] Successfully extracted transcript, length:', transcriptText.length);
+              makeApiCall(transcriptText, uniqueId, customPrompt, commandName);
+            } else {
+              handleApiError(uniqueId, 'The transcript extractor returned empty results. No captions found.');
+            }
           } else {
-            handleApiError(uniqueId, 'The transcript extractor returned empty results. No captions found.');
+            handleApiError(uniqueId, 'Could not extract any content from this YouTube video. The transcript extractor might have failed.');
           }
-        } else {
-          handleApiError(uniqueId, 'Could not extract any content from this YouTube video. The transcript extractor might have failed.');
-        }
+        });
       });
-    });
-  } else if (tab.url.match(/reddit\.com\/r\/.*\/comments\//)) {
+    } else if (tab.url.match(/reddit\.com\/r\/.*\/comments\//)) {
       console.log('[Background] Detected Reddit thread');
       chrome.scripting.executeScript({
-          target: { tabId: tab.id },
-          files: ['scripts/content-scraper.js']
+        target: { tabId: tab.id },
+        files: ['scripts/content-scraper.js']
       }, () => {
-          chrome.scripting.executeScript({
-              target: { tabId: tab.id },
-              function: () => extractRedditThread()
-          }, (results) => {
-              if (chrome.runtime.lastError) {
-                  console.error('[Background] Reddit script error:', chrome.runtime.lastError.message);
-                  handleApiError(uniqueId, `Failed to extract Reddit thread: ${chrome.runtime.lastError.message}`);
-                  return;
-              }
-              
-              const extractedContent = results?.[0]?.result;
-              if (extractedContent) {
-                  console.log('[Background] Reddit Extraction Result:', extractedContent.substring(0, 500) + '...');
-                  makeApiCall(extractedContent, uniqueId, customPrompt, commandName);
-              } else {
-                  handleApiError(uniqueId, 'Failed to extract Reddit content. Please ensure you are on a thread page.');
-              }
-          });
+        chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          function: () => extractRedditThread()
+        }, (results) => {
+          if (chrome.runtime.lastError) {
+            console.error('[Background] Reddit script error:', chrome.runtime.lastError.message);
+            handleApiError(uniqueId, `Failed to extract Reddit thread: ${chrome.runtime.lastError.message}`);
+            return;
+          }
+
+          const extractedContent = results?.[0]?.result;
+          if (extractedContent) {
+            console.log('[Background] Reddit Extraction Result:', extractedContent.substring(0, 500) + '...');
+            makeApiCall(extractedContent, uniqueId, customPrompt, commandName);
+          } else {
+            handleApiError(uniqueId, 'Failed to extract Reddit content. Please ensure you are on a thread page.');
+          }
+        });
       });
-  } else {
-    console.log('[Background] Non-YouTube page – injecting getPageContent');
-    // Inject the scraper script, then execute the function
-    chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      files: ['scripts/content-scraper.js']
-    }, () => {
+    } else {
+      console.log('[Background] Non-YouTube page – injecting getPageContent');
+      // Inject the scraper script, then execute the function
       chrome.scripting.executeScript({
         target: { tabId: tab.id },
-        function: () => getPageContent() // This function is from the injected script
-      }, (results) => {
-        console.log('[Background] getPageContent results:', results);
-        if (chrome.runtime.lastError) {
-          console.error('[Background] Script injection error:', chrome.runtime.lastError.message);
-          handleApiError(uniqueId, `Failed to get page content: ${chrome.runtime.lastError.message}`);
-          return;
-        }
+        files: ['scripts/content-scraper.js']
+      }, () => {
+        chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          function: () => getPageContent() // This function is from the injected script
+        }, (results) => {
+          console.log('[Background] getPageContent results:', results);
+          if (chrome.runtime.lastError) {
+            console.error('[Background] Script injection error:', chrome.runtime.lastError.message);
+            handleApiError(uniqueId, `Failed to get page content: ${chrome.runtime.lastError.message}`);
+            return;
+          }
 
-        if (results && results[0] && results[0].result) {
-          makeApiCall(results[0].result, uniqueId, customPrompt, commandName);
-        } else {
-          handleApiError(uniqueId, 'Could not get content from this page.');
-        }
+          if (results && results[0] && results[0].result) {
+            makeApiCall(results[0].result, uniqueId, customPrompt, commandName);
+          } else {
+            handleApiError(uniqueId, 'Could not get content from this page.');
+          }
+        });
       });
-    });
-  }
+    }
   });
 }
 
@@ -474,8 +474,8 @@ async function sendMessageSafely(tabId, message) {
     chrome.tabs.sendMessage(tabId, message, (response) => {
       if (chrome.runtime.lastError) {
         // Only reject if it's a real error, not just "no response"
-        if (chrome.runtime.lastError.message.includes('port closed') || 
-            chrome.runtime.lastError.message.includes('Receiving end does not exist')) {
+        if (chrome.runtime.lastError.message.includes('port closed') ||
+          chrome.runtime.lastError.message.includes('Receiving end does not exist')) {
           reject(new Error(chrome.runtime.lastError.message));
         } else {
           console.log('[Background] Message warning:', chrome.runtime.lastError.message);
@@ -503,15 +503,15 @@ function formatTime(seconds) {
  */
 function truncateText(text, maxLength = CONFIG.MAX_TEXT_LENGTH) {
   if (!text || text.length <= maxLength) return text;
-  
+
   const truncated = text.substring(0, maxLength);
   const lastSpace = truncated.lastIndexOf(' ');
-  
+
   // If we can find a word boundary, use it
   if (lastSpace > maxLength * 0.8) {
     return truncated.substring(0, lastSpace) + '...';
   }
-  
+
   return truncated + '...';
 }
 
@@ -524,7 +524,7 @@ async function makeApiCall(inputData, uniqueId, customUserPrompt = null, command
     console.log(`[API] Request ${uniqueId} was cancelled, skipping API call`);
     return;
   }
-  
+
   // Check if the window/request was already closed/cancelled
   const tabId = tabIdMap.get(uniqueId);
   if (!tabId) {
@@ -535,119 +535,125 @@ async function makeApiCall(inputData, uniqueId, customUserPrompt = null, command
   const { apiUrl, model, systemPrompt, timestampPrompt, apiKey, enableDebugMode, includeTimestamps, apiProvider, customFormat } = await chrome.storage.sync.get(
     ['apiUrl', 'model', 'systemPrompt', 'timestampPrompt', 'apiKey', 'enableDebugMode', 'includeTimestamps', 'apiProvider', 'customFormat']
   );
-  
+
   const adapter = getAdapter(apiProvider, customFormat);
 
   // Universal Debug Mode Check - intercept BEFORE any processing/truncation
   if (enableDebugMode) {
-      console.log('[API] Debug Mode Enabled - intercepting request');
-      const tab = tabIdMap.get(uniqueId);
-      if (tab) {
-          let debugContent = '';
-          let rawInput = inputData;
-          
-          if (typeof inputData === 'string') {
-              debugContent = inputData;
-          } else if (Array.isArray(inputData)) {
-              // For follow-ups, show the latest user message or full history
-              debugContent = JSON.stringify(inputData, null, 2);
-              rawInput = null; // Don't treat as original context string
-          }
-          
-          let effectiveSystemPrompt = systemPrompt?.trim() || 'You are a helpful assistant that summarizes content concisely.';
-          if (includeTimestamps && timestampPrompt) {
-            effectiveSystemPrompt += '\n\n' + timestampPrompt.trim();
-          }
+    console.log('[API] Debug Mode Enabled - intercepting request');
+    const tab = tabIdMap.get(uniqueId);
+    if (tab) {
+      let debugContent = '';
+      let rawInput = inputData;
 
-          let payloadContent = debugContent;
-          if (customUserPrompt && typeof inputData === 'string') {
-              payloadContent = `[Custom Prompt]: ${customUserPrompt}\n\n[Extracted Content]:\n${debugContent}`;
-          }
-
-          await sendMessageSafely(tab, { action: 'hideLoading', uniqueId });
-          
-          const label = commandName ? `/${commandName}` : (customUserPrompt ? 'Custom Prompt' : 'Default Summary');
-          
-          await sendMessageSafely(tab, {
-              action: 'appendToFloatingWindow',
-              content: `**[DEBUG MODE]**\n\n**Action:** ${label}\n**Model:** ${model}\n**Target URL:** ${apiUrl}\n**System Prompt:**\n${effectiveSystemPrompt}\n\n**Content Payload (${payloadContent.length} chars):**\n\n${payloadContent}\n`,
-              uniqueId
-          });
-          
-          // Unlock chat if it was an initial request
-          if (typeof inputData === 'string') {
-             await sendMessageSafely(tab, { 
-                action: 'streamEnd', 
-                uniqueId, 
-                fullResponse: "[Debug Mode: No API Call Made]",
-                originalContext: inputData
-            });
-          }
+      if (typeof inputData === 'string') {
+        debugContent = inputData;
+      } else if (Array.isArray(inputData)) {
+        // For follow-ups, show the latest user message or full history
+        debugContent = JSON.stringify(inputData, null, 2);
+        rawInput = null; // Don't treat as original context string
       }
-      return;
+
+      let effectiveSystemPrompt = systemPrompt?.trim() || 'You are a helpful assistant that summarizes content concisely.';
+      if (includeTimestamps && timestampPrompt) {
+        effectiveSystemPrompt += '\n\n' + timestampPrompt.trim();
+      }
+
+      let payloadContent = debugContent;
+      if (customUserPrompt && typeof inputData === 'string') {
+        payloadContent = `[Custom Prompt]: ${customUserPrompt}\n\n[Extracted Content]:\n${debugContent}`;
+      }
+
+      await sendMessageSafely(tab, { action: 'hideLoading', uniqueId });
+
+      const label = commandName ? `/${commandName}` : (customUserPrompt ? 'Custom Prompt' : 'Default Summary');
+
+      await sendMessageSafely(tab, {
+        action: 'appendToFloatingWindow',
+        content: `**[DEBUG MODE]**\n\n**Action:** ${label}\n**Model:** ${model}\n**Target URL:** ${apiUrl}\n**System Prompt:**\n${effectiveSystemPrompt}\n\n**Content Payload (${payloadContent.length} chars):**\n\n${payloadContent}\n`,
+        uniqueId
+      });
+
+      // Unlock chat if it was an initial request
+      if (typeof inputData === 'string') {
+        await sendMessageSafely(tab, {
+          action: 'streamEnd',
+          uniqueId,
+          fullResponse: "[Debug Mode: No API Call Made]",
+          originalContext: inputData
+        });
+      }
+    }
+    return;
   }
 
   // Determine if this is an initial request (string) or follow-up (array)
   let messages = [];
   let originalContext = null; // Only set for initial request
-  
+
   let effectiveSystemPrompt = systemPrompt?.trim() || 'You are a helpful assistant that summarizes content concisely.';
   if (includeTimestamps && timestampPrompt) {
-      effectiveSystemPrompt += '\n\n' + timestampPrompt.trim();
+    effectiveSystemPrompt += '\n\n' + timestampPrompt.trim();
   }
-  
+
   if (typeof inputData === 'string') {
-      // Initial Summary Request
-      const text = inputData;
-      // Validate and truncate text if necessary
-      if (!text) {
-        console.error('[API] Invalid text input');
-        await handleApiError(uniqueId, 'Invalid text content');
-        return;
-      }
-    
-      const trimmedText = text.trim();
-      const processedText = truncateText(trimmedText);
-      originalContext = processedText;
-
-      if (processedText.length < trimmedText.length) {
-        console.log('[API] Text was truncated from', trimmedText.length, 'to', processedText.length, 'characters');
-        // Warning suppressed for user interface to avoid confusion, logged to console only.
-      }
-      
-      // If a custom user prompt (from a slash command) is provided, show it in the UI
-      if (customUserPrompt) {
-          const tab = tabIdMap.get(uniqueId);
-          if (tab) {
-              // Use slash command name if available, otherwise first line of prompt
-              const label = commandName ? `/${commandName}` : customUserPrompt.split('\n')[0].substring(0, 50);
-              const formattedPrompt = `\n**YOU:** ${label}${commandName ? '' : '...'}\n\n---\n`;
-              sendMessageSafely(tab, {
-                  action: 'appendToFloatingWindow',
-                  content: formattedPrompt,
-                  uniqueId
-              });
-          }
-      }
-
-      messages = [
-        { role: 'system', content: effectiveSystemPrompt },
-        { role: 'user', content: customUserPrompt ? `${customUserPrompt}\n\n---\n\n${processedText}` : processedText }
-      ];
-  } else if (Array.isArray(inputData)) {
-      // Follow-up Request
-      // We prepend the system prompt (or rely on the one passed, but safer to inject current config)
-      messages = [
-          { role: 'system', content: effectiveSystemPrompt },
-          ...inputData
-      ];
-  } else {
-      console.error('[API] Invalid input data type');
+    // Initial Summary Request
+    const text = inputData;
+    // Validate and truncate text if necessary
+    if (!text) {
+      console.error('[API] Invalid text input');
+      await handleApiError(uniqueId, 'Invalid text content');
       return;
+    }
+
+    const trimmedText = text.trim();
+    const processedText = truncateText(trimmedText);
+
+    // If this is a Quick Command, the custom prompt completely replaces the Default System Prompt
+    if (customUserPrompt) {
+      effectiveSystemPrompt = customUserPrompt;
+    }
+
+    // Retain the visual combination for the chat history, but the API gets them fully isolated
+    const finalContent = customUserPrompt ? `${customUserPrompt}\n\n---\n\n${processedText}` : processedText;
+    originalContext = finalContent;
+
+    if (processedText.length < trimmedText.length) {
+      console.log('[API] Text was truncated from', trimmedText.length, 'to', processedText.length, 'characters');
+      // Warning suppressed for user interface to avoid confusion, logged to console only.
+    }
+
+    // If a custom user prompt (from a slash command) is provided, show it in the UI
+    if (customUserPrompt) {
+      const tab = tabIdMap.get(uniqueId);
+      if (tab) {
+        // Use slash command name if available, otherwise first line of prompt
+        const label = commandName ? `/${commandName}` : customUserPrompt.split('\n')[0].substring(0, 50);
+        const formattedPrompt = `\n**YOU:** ${label}${commandName ? '' : '...'}\n\n---\n`;
+        sendMessageSafely(tab, {
+          action: 'appendToFloatingWindow',
+          content: formattedPrompt,
+          uniqueId
+        });
+      }
+    }
+
+    messages = [
+      { role: 'user', content: processedText }
+    ];
+  } else if (Array.isArray(inputData)) {
+    // Follow-up Request
+    // System prompt injection is handled by the provider adapters natively
+    messages = [
+      ...inputData
+    ];
+  } else {
+    console.error('[API] Invalid input data type');
+    return;
   }
-  
+
   console.log('[API] retrieved settings:', { apiUrl, model, systemPrompt, apiKey: !!apiKey });
-  
+
   // Validate configuration
   if (!apiUrl || !apiKey) {
     console.error('[API] API URL or API Key not set');
@@ -666,10 +672,10 @@ async function makeApiCall(inputData, uniqueId, customUserPrompt = null, command
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), CONFIG.REQUEST_TIMEOUT);
-  
+
   // Store the abort controller for potential cancellation
   abortControllers.set(uniqueId, { controller, timeoutId, reader: null });
-  
+
   // Initialize response accumulator
   responseAccumulators.set(uniqueId, '');
 
@@ -680,7 +686,7 @@ async function makeApiCall(inputData, uniqueId, customUserPrompt = null, command
     console.log('[API] ===== API REQUEST DEBUG =====');
     console.log('[API] Provider:', apiProvider || 'default');
     console.log('[API] Model:', model);
-    console.log('[API] Streaming enabled:', requestBody.stream); 
+    console.log('[API] Streaming enabled:', requestBody.stream);
     console.log('[API] Message count:', messages.length);
     console.log('[API] ===== END API REQUEST DEBUG =====');
 
@@ -716,11 +722,11 @@ async function makeApiCall(inputData, uniqueId, customUserPrompt = null, command
       abortControllers.delete(uniqueId);
       return;
     }
-    
+
     if (!response.body) {
       throw new Error('Response body is not available for streaming');
     }
-    
+
     console.log('[API] Processing stream...');
     // Log the start of the stream processing
     console.log('[API] Stream headers:', Object.fromEntries(response.headers.entries()));
@@ -733,7 +739,7 @@ async function makeApiCall(inputData, uniqueId, customUserPrompt = null, command
     if (abortInfo) {
       abortInfo.reader = reader;
     }
-    
+
     // Only send initial empty string if it's the very first request (string input)
     // Actually, for follow-ups we also want to confirm stream start?
     // Existing logic sends empty string to 'appendToFloatingWindow'. 
@@ -764,16 +770,16 @@ async function makeApiCall(inputData, uniqueId, customUserPrompt = null, command
           if (buffer.length > 0) {
             processBuffer(buffer, uniqueId, adapter);
           }
-          
+
           // Send stream end signal with full response and original context
           const fullResponse = responseAccumulators.get(uniqueId);
-          await sendMessageSafely(tab, { 
-              action: 'streamEnd', 
-              uniqueId, 
-              fullResponse,
-              originalContext
+          await sendMessageSafely(tab, {
+            action: 'streamEnd',
+            uniqueId,
+            fullResponse,
+            originalContext
           });
-          
+
           await sendMessageSafely(tab, { action: 'hideLoading', uniqueId });
           abortControllers.delete(uniqueId);
           cancelledRequests.delete(uniqueId);
@@ -805,7 +811,7 @@ async function makeApiCall(inputData, uniqueId, customUserPrompt = null, command
     abortControllers.delete(uniqueId);
     // responseAccumulators.delete(uniqueId); // Keep for inspection?
     console.error('[API] call error:', err);
-    
+
     let errorMessage = 'API request failed';
     if (err.name === 'AbortError') {
       errorMessage = 'Request timed out. Please try again.';
@@ -814,7 +820,7 @@ async function makeApiCall(inputData, uniqueId, customUserPrompt = null, command
     } else if (err.message.includes('fetch')) {
       errorMessage = 'Network error. Please check your connection.';
     }
-    
+
     await handleApiError(uniqueId, errorMessage);
   }
 }
@@ -824,18 +830,18 @@ async function makeApiCall(inputData, uniqueId, customUserPrompt = null, command
  */
 function stopApiRequest(uniqueId) {
   console.log(`[API] Stopping API request for uniqueId: ${uniqueId}`);
-  
+
   // Mark request as cancelled to prevent future execution
   cancelledRequests.add(uniqueId);
-  
+
   const abortInfo = abortControllers.get(uniqueId);
   if (abortInfo) {
     const { controller, timeoutId, reader } = abortInfo;
-    
+
     // Abort the fetch request
     controller.abort();
     clearTimeout(timeoutId);
-    
+
     // Cancel the stream reader if it exists
     if (reader) {
       try {
@@ -845,10 +851,10 @@ function stopApiRequest(uniqueId) {
         console.log(`[API] Reader already cancelled or closed for ${uniqueId}`);
       }
     }
-    
+
     abortControllers.delete(uniqueId);
     console.log(`[API] Successfully aborted request ${uniqueId}`);
-    
+
     // Send notification to UI that request was stopped
     const tab = tabIdMap.get(uniqueId);
     if (tab) {
@@ -859,11 +865,11 @@ function stopApiRequest(uniqueId) {
         uniqueId
       });
     }
-    
+
     tabIdMap.delete(uniqueId);
   } else {
     console.log(`[API] Request ${uniqueId} marked as cancelled (may not have started yet)`);
-    
+
     // Still try to clean up tab mapping
     tabIdMap.delete(uniqueId);
   }
@@ -879,7 +885,7 @@ async function handleApiError(uniqueId, message) {
     clearTimeout(abortInfo.timeoutId);
     abortControllers.delete(uniqueId);
   }
-  
+
   const tab = tabIdMap.get(uniqueId);
   if (tab) {
     try {
@@ -898,52 +904,52 @@ async function handleApiError(uniqueId, message) {
 }
 
 function processBuffer(buffer, uniqueId, adapter) {
-    const abortInfo = abortControllers.get(uniqueId);
-    if (!abortInfo) {
-        console.log('[API] Request was aborted, skipping buffer processing for:', uniqueId);
-        return '';
+  const abortInfo = abortControllers.get(uniqueId);
+  if (!abortInfo) {
+    console.log('[API] Request was aborted, skipping buffer processing for:', uniqueId);
+    return '';
+  }
+
+  const lines = buffer.split('\n');
+  buffer = lines.pop();
+
+  for (const line of lines) {
+    if (!abortControllers.get(uniqueId)) {
+      console.log('[API] Request was aborted during buffer processing for:', uniqueId);
+      return '';
     }
 
-    const lines = buffer.split('\n');
-    buffer = lines.pop();
+    if (line.trim().startsWith('data: ')) {
+      const jsonLine = line.trim().substring(5).trim();
 
-    for (const line of lines) {
-        if (!abortControllers.get(uniqueId)) {
-            console.log('[API] Request was aborted during buffer processing for:', uniqueId);
-            return '';
-        }
-
-        if (line.trim().startsWith('data: ')) {
-            const jsonLine = line.trim().substring(5).trim();
-            
-            if (adapter.isStreamEnd(jsonLine)) {
-                console.log('[API] Stream end signal received.');
-                continue;
-            }
-            handleJsonLine(jsonLine, uniqueId, adapter);
-        }
+      if (adapter.isStreamEnd(jsonLine)) {
+        console.log('[API] Stream end signal received.');
+        continue;
+      }
+      handleJsonLine(jsonLine, uniqueId, adapter);
     }
-    return buffer;
+  }
+  return buffer;
 }
 
 function handleJsonLine(jsonLine, uniqueId, adapter) {
   try {
     if (!jsonLine) return;
-    
+
     const abortInfo = abortControllers.get(uniqueId);
     if (!abortInfo) {
       console.log('[API] Request was aborted, skipping JSON line processing for:', uniqueId);
       return;
     }
-    
+
     const data = JSON.parse(jsonLine);
     const tab = tabIdMap.get(uniqueId);
-    
+
     if (!tab) {
       console.log('[API] No tab found for uniqueId:', uniqueId, '(window may be closed)');
       return;
     }
-    
+
     const contentChunk = adapter.parseStreamChunk(data);
 
     if (contentChunk) {
@@ -954,11 +960,11 @@ function handleJsonLine(jsonLine, uniqueId, adapter) {
       }, () => {
         void chrome.runtime.lastError;
       });
-      
+
       const current = responseAccumulators.get(uniqueId) || '';
       responseAccumulators.set(uniqueId, current + contentChunk);
     }
-    
+
   } catch (e) {
     console.log('[API] Failed to parse JSON line (stream may be cancelled):', e.message, 'Line:', jsonLine.substring(0, 100));
   }
