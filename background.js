@@ -1,12 +1,10 @@
 // background.js - Chrome Extension Service Worker
 // Handles URL content extraction and API communication for summarization
-console.log('[Background] Service worker loaded');
 
 // Handle expected AbortErrors from cancelled API requests
 self.addEventListener('unhandledrejection', event => {
   if (event.reason && event.reason.name === 'AbortError') {
     // This is expected when we cancel API requests - suppress the error
-    console.log('[Background] API request cancelled (expected)');
     event.preventDefault();
   }
 });
@@ -192,17 +190,7 @@ const GeminiAdapter = {
   }
 };
 
-function getAdapter(provider, customFormat = null) {
-  // If custom format is provided (for custom providers), use that
-  if (customFormat) {
-    // For custom providers, caller should pass the format string
-    // Return OpenAI as default for OpenAI-compatible APIs
-    if (customFormat === 'azure') return AzureAdapter;
-    if (customFormat === 'anthropic') return AnthropicAdapter;
-    if (customFormat === 'gemini') return GeminiAdapter;
-    return OpenAIAdapter; // Default for openai-compatible
-  }
-
+function getAdapter(provider) {
   // Route based on provider name
   const providerLower = (provider || '').toLowerCase();
 
@@ -236,7 +224,7 @@ chrome.runtime.onStartup.addListener(() => {
 
 // Update context menu when settings change
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'sync' && (changes.enableContextMenu || changes.slashCommands)) {
+  if (area === 'local' && (changes.enableContextMenu || changes.slashCommands)) {
     setupContextMenu();
   }
 });
@@ -245,19 +233,16 @@ chrome.storage.onChanged.addListener((changes, area) => {
 chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (info.menuItemId === CONFIG.CONTEXT_MENU_ID && info.selectionText) {
     // Existing: Summarize selection with default prompt
-    console.log('[Background] Context menu clicked with selection');
     handleIconClick(tab, info.selectionText).catch(err => {
       console.error('[Background] Context menu handler error:', err);
     });
   } else if (info.menuItemId.startsWith('slash-cmd-')) {
     // New: Slash command clicked from extension icon menu
     const index = parseInt(info.menuItemId.replace('slash-cmd-', ''), 10);
-    console.log(`[Background] Slash command menu item clicked, index: ${index}`);
 
-    chrome.storage.sync.get(['slashCommands'], (result) => {
+    chrome.storage.local.get(['slashCommands'], (result) => {
       const cmd = result.slashCommands?.[index];
       if (cmd) {
-        console.log(`[Background] Running slash command: /${cmd.command}`);
         handleIconClick(tab, null, cmd.prompt, cmd.command).catch(err => {
           console.error('[Background] Slash command handler error:', err);
         });
@@ -269,7 +254,7 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 });
 
 async function setupContextMenu() {
-  const { enableContextMenu, slashCommands } = await chrome.storage.sync.get(['enableContextMenu', 'slashCommands']);
+  const { enableContextMenu, slashCommands } = await chrome.storage.local.get(['enableContextMenu', 'slashCommands']);
 
   // Default to true if not set (undefined)
   const isEnabled = enableContextMenu ?? true;
@@ -294,7 +279,6 @@ async function setupContextMenu() {
           contexts: ["action"]
         });
       });
-      console.log(`[Background] Created ${commands.length} slash command menu items`);
     } else {
       // Show placeholder when no commands configured
       chrome.contextMenus.create({
@@ -304,7 +288,6 @@ async function setupContextMenu() {
         contexts: ["action"],
         enabled: false
       });
-      console.log('[Background] No slash commands configured, showing placeholder');
     }
 
     // Existing selection context menu
@@ -314,23 +297,18 @@ async function setupContextMenu() {
         title: chrome.i18n.getMessage('menuSummarizeSelection') || "Summarize selection",
         contexts: ["selection"]
       });
-      console.log('[Background] Selection context menu enabled');
-    } else {
-      console.log('[Background] Selection context menu disabled');
     }
   });
 }
 
 // Add message listener for stopping API requests and handling follow-ups
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  console.log('[Background] Received message:', request);
   if (request.action === 'stopApiRequest') {
     stopApiRequest(request.uniqueId);
     sendResponse({ success: true });
   } else if (request.action === 'submitFollowUp') {
     // Re-establish tab mapping if lost (e.g. due to Service Worker restart)
     if (sender.tab && sender.tab.id) {
-      // console.log(`[Background] Restoring tabId map for ${request.uniqueId} -> ${sender.tab.id}`);
       tabIdMap.set(request.uniqueId, sender.tab.id);
     }
 
@@ -342,15 +320,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
 // Wrap click logic in its own async function so we can catch errors
 chrome.action.onClicked.addListener((tab) => {
-  console.log('[Background] icon clicked:', tab);
   handleIconClick(tab).catch(err => {
     console.error('[Background] handleIconClick error:', err);
   });
 });
 
 async function handleIconClick(tab, directTextContent = null, customPrompt = null, commandName = null) {
-  console.log('[Background] handleIconClick start – tab.id=', tab.id, 'url=', tab.url, 'hasDirectText=', !!directTextContent, 'hasCustomPrompt=', !!customPrompt, 'commandName=', commandName);
-
   // Validate tab and URL
   if (!tab || !tab.id || !tab.url) {
     console.error('[Background] Invalid tab object:', tab);
@@ -359,7 +334,6 @@ async function handleIconClick(tab, directTextContent = null, customPrompt = nul
 
   // Check if URL is processable
   if (tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://') || tab.url.startsWith('moz-extension://')) {
-    console.log('[Background] Cannot process browser internal pages');
     return;
   }
 
@@ -389,16 +363,13 @@ async function handleIconClick(tab, directTextContent = null, customPrompt = nul
 
     // If we have direct text (e.g. from context menu selection), skip scraping
     if (directTextContent) {
-      console.log('[Background] Using direct text content from selection');
       makeApiCall(directTextContent, uniqueId, customPrompt, commandName);
       return;
     }
 
     if (tab.url.includes('youtube.com/watch')) {
-      console.log('[Background] Detected YouTube watch page');
       const match = tab.url.match(/[?&]v=([^&]+)/);
       const videoId = match?.[1];
-      console.log('[Background] Parsed videoId:', videoId);
       if (!videoId) {
         chrome.tabs.sendMessage(tab.id, { action: 'hideLoading', uniqueId });
         chrome.tabs.sendMessage(tab.id, {
@@ -410,7 +381,6 @@ async function handleIconClick(tab, directTextContent = null, customPrompt = nul
       }
 
       // Use the new content script that mimics the Python implementation
-      console.log('[Background] Injecting YouTube transcript extractor (Python-style)');
       chrome.scripting.executeScript({
         target: { tabId: tab.id },
         files: ['scripts/content-scraper.js']
@@ -419,7 +389,6 @@ async function handleIconClick(tab, directTextContent = null, customPrompt = nul
           target: { tabId: tab.id },
           function: () => extractYouTubeCaptions() // This function uses the Python approach
         }, (results) => {
-          console.log('[Background] YouTube transcript extraction completed');
           if (chrome.runtime.lastError) {
             console.error('[Background] Script injection error:', chrome.runtime.lastError.message);
             handleApiError(uniqueId, `Failed to extract content: ${chrome.runtime.lastError.message}`);
@@ -429,24 +398,7 @@ async function handleIconClick(tab, directTextContent = null, customPrompt = nul
           if (results && results[0] && results[0].result) {
             const transcriptText = results[0].result;
 
-            // Enhanced logging for debugging
-            console.log('[Background] ===== TRANSCRIPT EXTRACTION DEBUG =====');
-            console.log('[Background] Result type:', typeof transcriptText);
-            console.log('[Background] Result length:', transcriptText?.length || 0);
-
-            if (transcriptText && transcriptText.length > 0) {
-              console.log('[Background] First 200 chars:', transcriptText.substring(0, 200));
-              console.log('[Background] Last 200 chars:', transcriptText.substring(Math.max(0, transcriptText.length - 200)));
-
-              // // Log full content without chunking
-              // console.log('[Background] ===== FULL TRANSCRIPT CONTENT =====');
-              // console.log('[Background] Full transcript:', transcriptText);
-              // console.log('[Background] ===== END TRANSCRIPT CONTENT =====');
-            }
-            console.log('[Background] ===== END TRANSCRIPT DEBUG =====');
-
             if (transcriptText && transcriptText.trim().length > 0) {
-              console.log('[Background] Successfully extracted transcript, length:', transcriptText.length);
               makeApiCall(transcriptText, uniqueId, customPrompt, commandName);
             } else {
               handleApiError(uniqueId, 'The transcript extractor returned empty results. No captions found.');
@@ -457,7 +409,6 @@ async function handleIconClick(tab, directTextContent = null, customPrompt = nul
         });
       });
     } else if (tab.url.match(/reddit\.com\/r\/.*\/comments\//)) {
-      console.log('[Background] Detected Reddit thread');
       chrome.scripting.executeScript({
         target: { tabId: tab.id },
         files: ['scripts/content-scraper.js']
@@ -474,7 +425,6 @@ async function handleIconClick(tab, directTextContent = null, customPrompt = nul
 
           const extractedContent = results?.[0]?.result;
           if (extractedContent) {
-            console.log('[Background] Reddit Extraction Result:', extractedContent.substring(0, 500) + '...');
             makeApiCall(extractedContent, uniqueId, customPrompt, commandName);
           } else {
             handleApiError(uniqueId, 'Failed to extract Reddit content. Please ensure you are on a thread page.');
@@ -482,7 +432,6 @@ async function handleIconClick(tab, directTextContent = null, customPrompt = nul
         });
       });
     } else {
-      console.log('[Background] Non-YouTube page – injecting getPageContent');
       // Inject the scraper script, then execute the function
       chrome.scripting.executeScript({
         target: { tabId: tab.id },
@@ -492,7 +441,6 @@ async function handleIconClick(tab, directTextContent = null, customPrompt = nul
           target: { tabId: tab.id },
           function: () => getPageContent() // This function is from the injected script
         }, (results) => {
-          console.log('[Background] getPageContent results:', results);
           if (chrome.runtime.lastError) {
             console.error('[Background] Script injection error:', chrome.runtime.lastError.message);
             handleApiError(uniqueId, `Failed to get page content: ${chrome.runtime.lastError.message}`);
@@ -522,7 +470,6 @@ async function sendMessageSafely(tabId, message) {
           chrome.runtime.lastError.message.includes('Receiving end does not exist')) {
           reject(new Error(chrome.runtime.lastError.message));
         } else {
-          console.log('[Background] Message warning:', chrome.runtime.lastError.message);
           resolve(null);
         }
       } else {
@@ -530,18 +477,6 @@ async function sendMessageSafely(tabId, message) {
       }
     });
   });
-}
-
-async function ensureHostPermission(url) {
-  try {
-    const parsed = new URL(url);
-    const originPattern = `${parsed.protocol}//${parsed.host}/*`;
-    const hasPermission = await chrome.permissions.contains({ origins: [originPattern] });
-    return hasPermission;
-  } catch (error) {
-    console.warn('[Background] Could not evaluate host permission for URL:', url, error);
-    return false;
-  }
 }
 
 /**
@@ -567,7 +502,6 @@ function truncateText(text, maxLength = CONFIG.MAX_TEXT_LENGTH) {
 async function makeApiCall(inputData, uniqueId, customUserPrompt = null, commandName = null) {
   // Check if the request was explicitly cancelled
   if (cancelledRequests.has(uniqueId)) {
-    console.log(`[API] Request ${uniqueId} was cancelled, skipping API call`);
     cancelledRequests.delete(uniqueId);
     responseAccumulators.delete(uniqueId);
     return;
@@ -576,21 +510,19 @@ async function makeApiCall(inputData, uniqueId, customUserPrompt = null, command
   // Check if the window/request was already closed/cancelled
   const tabId = tabIdMap.get(uniqueId);
   if (!tabId) {
-    console.log(`[API] Request ${uniqueId} was already closed/cancelled, skipping API call`);
     cancelledRequests.delete(uniqueId);
     responseAccumulators.delete(uniqueId);
     return;
   }
 
-  const { apiUrl, model, systemPrompt, timestampPrompt, apiKey, enableDebugMode, includeTimestamps, apiProvider, customFormat } = await chrome.storage.sync.get(
-    ['apiUrl', 'model', 'systemPrompt', 'timestampPrompt', 'apiKey', 'enableDebugMode', 'includeTimestamps', 'apiProvider', 'customFormat']
+  const { apiUrl, model, systemPrompt, timestampPrompt, apiKey, enableDebugMode, includeTimestamps, apiProvider } = await chrome.storage.local.get(
+    ['apiUrl', 'model', 'systemPrompt', 'timestampPrompt', 'apiKey', 'enableDebugMode', 'includeTimestamps', 'apiProvider']
   );
 
-  const adapter = getAdapter(apiProvider, customFormat);
+  const adapter = getAdapter(apiProvider);
 
   // Universal Debug Mode Check - intercept BEFORE any processing/truncation
   if (enableDebugMode) {
-    console.log('[API] Debug Mode Enabled - intercepting request');
     const tab = tabIdMap.get(uniqueId);
     if (tab) {
       let debugContent = '';
@@ -675,8 +607,7 @@ async function makeApiCall(inputData, uniqueId, customUserPrompt = null, command
     originalContext = finalContent;
 
     if (processedText.length < trimmedText.length) {
-      console.log('[API] Text was truncated from', trimmedText.length, 'to', processedText.length, 'characters');
-      // Warning suppressed for user interface to avoid confusion, logged to console only.
+      // Warning intentionally suppressed in UI to avoid confusing users when long text is truncated.
     }
 
     // If a custom user prompt (from a slash command) is provided, show it in the UI
@@ -708,8 +639,6 @@ async function makeApiCall(inputData, uniqueId, customUserPrompt = null, command
     return;
   }
 
-  console.log('[API] retrieved settings:', { apiUrl, model, systemPrompt, apiKey: !!apiKey });
-
   // Validate configuration
   if (!apiUrl || !apiKey) {
     console.error('[API] API URL or API Key not set');
@@ -739,13 +668,6 @@ async function makeApiCall(inputData, uniqueId, customUserPrompt = null, command
     const requestBody = adapter.transformRequest(messages, model, effectiveSystemPrompt);
     requestBody.stream = true;
 
-    console.log('[API] ===== API REQUEST DEBUG =====');
-    console.log('[API] Provider:', apiProvider || 'default');
-    console.log('[API] Model:', model);
-    console.log('[API] Streaming enabled:', requestBody.stream);
-    console.log('[API] Message count:', messages.length);
-    console.log('[API] ===== END API REQUEST DEBUG =====');
-
     let fetchUrl = apiUrl;
     const shouldForceGeminiUrl = apiProvider === 'gemini';
     if (shouldForceGeminiUrl) {
@@ -753,16 +675,6 @@ async function makeApiCall(inputData, uniqueId, customUserPrompt = null, command
       fetchUrl = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:streamGenerateContent?key=${apiKey.trim()}`;
     }
 
-    const hasHostPermission = await ensureHostPermission(fetchUrl);
-    if (!hasHostPermission) {
-      await handleApiError(
-        uniqueId,
-        'Host permission for this API endpoint is missing. Open Options and Save/Test your endpoint to grant access.'
-      );
-      return;
-    }
-
-    console.log('[API] Making API Request (streaming mode)');
     const response = await fetch(fetchUrl, {
       method: 'POST',
       headers: adapter.buildHeaders(apiKey),
@@ -779,8 +691,6 @@ async function makeApiCall(inputData, uniqueId, customUserPrompt = null, command
       throw new Error(`HTTP ${response.status}: ${response.statusText} - ${errorText.substring(0, 200)}`);
     }
 
-    console.log('[API] response.status=', response.status);
-
     const tab = tabIdMap.get(uniqueId);
     if (!tab) {
       console.error('[API] No tab found for uniqueId:', uniqueId);
@@ -792,9 +702,6 @@ async function makeApiCall(inputData, uniqueId, customUserPrompt = null, command
       throw new Error('Response body is not available for streaming');
     }
 
-    console.log('[API] Processing stream...');
-    // Log the start of the stream processing
-    console.log('[API] Stream headers:', Object.fromEntries(response.headers.entries()));
     const reader = response.body.getReader();
     const decoder = new TextDecoder('utf-8');
     let buffer = '';
@@ -820,18 +727,15 @@ async function makeApiCall(inputData, uniqueId, customUserPrompt = null, command
         // Check if request was aborted before reading next chunk
         const currentAbortInfo = abortControllers.get(uniqueId);
         if (!currentAbortInfo) {
-          console.log('[API] Request was aborted, stopping stream processing');
           try {
             reader.cancel();
           } catch (e) {
-            console.log('[API] Reader already cancelled or closed');
           }
           break;
         }
 
         const { done, value } = await reader.read();
         if (done) {
-          console.log('[API] Stream finished');
           if (buffer.length > 0) {
             processBuffer(buffer, uniqueId, adapter);
           }
@@ -857,7 +761,6 @@ async function makeApiCall(inputData, uniqueId, customUserPrompt = null, command
       }
     } catch (error) {
       if (error.name === 'AbortError') {
-        console.log('[API] Stream reading aborted by user');
       } else {
         console.error('[API] Stream reading error:', error);
       }
@@ -895,7 +798,6 @@ async function makeApiCall(inputData, uniqueId, customUserPrompt = null, command
  * Stop an ongoing API request
  */
 function stopApiRequest(uniqueId) {
-  console.log(`[API] Stopping API request for uniqueId: ${uniqueId}`);
 
   // Mark request as cancelled to prevent future execution
   cancelledRequests.add(uniqueId);
@@ -912,14 +814,11 @@ function stopApiRequest(uniqueId) {
     if (reader) {
       try {
         reader.cancel();
-        console.log(`[API] Stream reader cancelled for ${uniqueId}`);
       } catch (e) {
-        console.log(`[API] Reader already cancelled or closed for ${uniqueId}`);
       }
     }
 
     abortControllers.delete(uniqueId);
-    console.log(`[API] Successfully aborted request ${uniqueId}`);
 
     // Send notification to UI that request was stopped
     const tab = tabIdMap.get(uniqueId);
@@ -935,8 +834,6 @@ function stopApiRequest(uniqueId) {
     tabIdMap.delete(uniqueId);
     responseAccumulators.delete(uniqueId);
   } else {
-    console.log(`[API] Request ${uniqueId} marked as cancelled (may not have started yet)`);
-
     // Still try to clean up tab mapping
     tabIdMap.delete(uniqueId);
     responseAccumulators.delete(uniqueId);
@@ -980,7 +877,6 @@ async function handleApiError(uniqueId, message) {
 function processBuffer(buffer, uniqueId, adapter) {
   const abortInfo = abortControllers.get(uniqueId);
   if (!abortInfo) {
-    console.log('[API] Request was aborted, skipping buffer processing for:', uniqueId);
     return '';
   }
 
@@ -989,7 +885,6 @@ function processBuffer(buffer, uniqueId, adapter) {
 
   for (const line of lines) {
     if (!abortControllers.get(uniqueId)) {
-      console.log('[API] Request was aborted during buffer processing for:', uniqueId);
       return '';
     }
 
@@ -997,7 +892,6 @@ function processBuffer(buffer, uniqueId, adapter) {
       const jsonLine = line.trim().substring(5).trim();
 
       if (adapter.isStreamEnd(jsonLine)) {
-        console.log('[API] Stream end signal received.');
         continue;
       }
       handleJsonLine(jsonLine, uniqueId, adapter);
@@ -1012,7 +906,6 @@ function handleJsonLine(jsonLine, uniqueId, adapter) {
 
     const abortInfo = abortControllers.get(uniqueId);
     if (!abortInfo) {
-      console.log('[API] Request was aborted, skipping JSON line processing for:', uniqueId);
       return;
     }
 
@@ -1020,7 +913,6 @@ function handleJsonLine(jsonLine, uniqueId, adapter) {
     const tab = tabIdMap.get(uniqueId);
 
     if (!tab) {
-      console.log('[API] No tab found for uniqueId:', uniqueId, '(window may be closed)');
       return;
     }
 
@@ -1040,6 +932,6 @@ function handleJsonLine(jsonLine, uniqueId, adapter) {
     }
 
   } catch (e) {
-    console.log('[API] Failed to parse JSON line (stream may be cancelled):', e.message, 'Line:', jsonLine.substring(0, 100));
+    console.warn('[API] Failed to parse JSON line:', e.message);
   }
 }

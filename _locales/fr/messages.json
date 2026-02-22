@@ -83,17 +83,9 @@
     "message": "OpenRouter",
     "description": "OpenRouter option"
   },
-  "providerCustom": {
-    "message": "Personnalisé / Autre",
-    "description": "Custom option"
-  },
   "helpProvider": {
-    "message": "Sélectionnez un préréglage pour remplir automatiquement le point de terminaison recommandé. Les préréglages compatibles OpenAI ajoutent automatiquement /completions. Choisissez Personnalisé pour utiliser des chemins différents.",
+    "message": "Sélectionnez un préréglage pour remplir automatiquement le point de terminaison recommandé. Les préréglages compatibles OpenAI ajoutent automatiquement /completions.",
     "description": "Provider help text"
-  },
-  "labelCustomFormat": {
-    "message": "Format personnalisé",
-    "description": "Custom provider format label"
   },
   "cardContextMenu": {
     "message": "Menu contextuel",
@@ -104,7 +96,7 @@
     "description": "API URL label"
   },
   "helpApiUrl": {
-    "message": "Le champ ci-dessus ajoute automatiquement /completions pour les fournisseurs style OpenAI. Modifiez-le après avoir sélectionné un préréglage si votre fournisseur attend un chemin différent.",
+    "message": "Le champ ci-dessus est rempli automatiquement à partir du préréglage de fournisseur sélectionné. Les fournisseurs de style OpenAI ajoutent automatiquement /completions.",
     "description": "API URL help text"
   },
   "labelModel": {
@@ -146,18 +138,6 @@
   "helpByteLimit": {
     "message": "Limite d'octets :",
     "description": "Byte limit label"
-  },
-  "cardStreaming": {
-    "message": "Streaming",
-    "description": "Streaming card title"
-  },
-  "labelStreaming": {
-    "message": "Activer le streaming",
-    "description": "Streaming label"
-  },
-  "helpStreaming": {
-    "message": "Recevez les réponses en temps réel au fur et à mesure de leur génération. Tous les fournisseurs ou modèles ne prennent pas en charge le streaming.",
-    "description": "Streaming help text"
   },
   "cardFontSize": {
     "message": "Confort de lecture",

@@ -3,12 +3,9 @@
 
 (function () {
   if (window.sSummarizerLoaded) {
-    console.log("[Content] Content script already loaded. Skipping re-initialization.");
     return;
   }
   window.sSummarizerLoaded = true;
-
-  console.log('[Content] Content script loaded');
 
   // State management for multiple floating windows
   let floatingWindows = new Map(); // Stores ShadowRoot
@@ -37,7 +34,6 @@
   };
 
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    console.log('Received message:', request);
     switch (request.action) {
       case 'createFloatingWindow':
         createFloatingWindow(request.uniqueId);
@@ -81,7 +77,7 @@
         cleanupWindowState(uniqueId);
       }
 
-      const { defaultFontSize } = await chrome.storage.sync.get('defaultFontSize');
+      const { defaultFontSize } = await chrome.storage.local.get('defaultFontSize');
       const initialFontSize = defaultFontSize || UI_CONFIG.DEFAULT_FONT_SIZE;
 
       const savedState = await chrome.storage.local.get(['windowState']);
@@ -297,7 +293,6 @@
           display: flex;
         }
 
-        
         /* Markdown styling for dark theme */
         #floating-window-${uniqueId} h1 { color: #4a9eff; font-size: 1.5em; margin: 16px 0 8px 0; font-weight: 600; }
         #floating-window-${uniqueId} h2 { color: #4a9eff; font-size: 1.3em; margin: 14px 0 6px 0; font-weight: 600; }
@@ -365,7 +360,7 @@
       dropdownSelectedIndex.set(uniqueId, -1);
 
       // Load slash commands from storage
-      chrome.storage.sync.get(['slashCommands'], (result) => {
+      chrome.storage.local.get(['slashCommands'], (result) => {
         slashCommandsCache.set(uniqueId, result.slashCommands || []);
       });
 
@@ -397,7 +392,6 @@
         });
       }
 
-
       // Add event listeners with error handling
       setupWindowEventListeners(uniqueId, win);
       setupChatListeners(uniqueId, win);
@@ -405,8 +399,6 @@
       // Make window interactive
       makeDraggable(uniqueId, win, win.querySelector(`#title-bar-${uniqueId}`));
       makeResizable(win, win.querySelector(`#resize-handle-${uniqueId}`));
-
-      console.log(`[Content] Created floating window ${uniqueId} at position`, position);
 
     } catch (error) {
       console.error('[Content] Error creating floating window:', error);
@@ -528,8 +520,6 @@
       }, (response) => {
         if (chrome.runtime.lastError) {
           console.warn('[Content] Error sending stop request:', chrome.runtime.lastError.message);
-        } else {
-          console.log(`[Content] Stop request sent for ${uniqueId}`);
         }
       });
 
@@ -539,7 +529,6 @@
         win.host.remove();
       }
       cleanupWindowState(uniqueId);
-      console.log(`[Content] Closed window ${uniqueId}`);
     } catch (error) {
       console.error('[Content] Error closing window:', error);
     }
@@ -609,7 +598,6 @@
     });
   }
 
-
   /**
    * Change font size with validation and bounds checking
    */
@@ -617,13 +605,11 @@
     try {
       const win = floatingWindows.get(uniqueId); // ShadowRoot
       if (!win) {
-        console.log(`[Content] Window ${uniqueId} already closed, skipping font size change`);
         return;
       }
 
       const content = win.querySelector(`#content-${uniqueId}`);
       if (!content) {
-        console.log(`[Content] Content element not found for window ${uniqueId} (window closed)`);
         return;
       }
 
@@ -636,8 +622,7 @@
       if (newSize !== currentSize) {
         textSizes.set(uniqueId, newSize);
         content.style.fontSize = `${newSize}px`;
-        chrome.storage.sync.set({ defaultFontSize: newSize });
-        console.log(`[Content] Font size changed and saved: ${newSize}px`);
+        chrome.storage.local.set({ defaultFontSize: newSize });
       }
     } catch (error) {
       console.error('[Content] Error changing font size:', error);
@@ -651,7 +636,6 @@
     try {
       const wrapper = floatingWindows.get(uniqueId); // ShadowRoot
       if (!wrapper) {
-        console.log(`[Content] Window ${uniqueId} already closed, skipping minimize toggle`);
         return;
       }
       const win = wrapper.querySelector(`#floating-window-${uniqueId}`);
@@ -660,7 +644,6 @@
       const minimizeBtn = win.querySelector(`#minimize-btn-${uniqueId}`);
 
       if (!content || !handle || !win) {
-        console.log(`[Content] Required elements not found for window ${uniqueId} (window closed)`);
         return;
       }
 
@@ -677,7 +660,6 @@
         if (minimizeBtn) minimizeBtn.textContent = '−';
         if (minimizeBtn) minimizeBtn.title = 'Minimize';
         isMinimized.set(uniqueId, false);
-        console.log(`[Content] Restored window ${uniqueId}`);
       } else {
         // Minimize window
         windowSizes.set(uniqueId, { width: win.offsetWidth, height: win.offsetHeight });
@@ -687,7 +669,6 @@
         if (minimizeBtn) minimizeBtn.textContent = '□';
         if (minimizeBtn) minimizeBtn.title = 'Restore';
         isMinimized.set(uniqueId, true);
-        console.log(`[Content] Minimized window ${uniqueId}`);
       }
     } catch (error) {
       console.error('[Content] Error toggling minimize:', error);
@@ -702,13 +683,11 @@
       const win = floatingWindows.get(uniqueId); // ShadowRoot
       if (!win) {
         // This is expected when window is already closed - no need to warn
-        console.log(`[Content] Window ${uniqueId} already closed, skipping message`);
         return;
       }
 
       const contentElement = win.querySelector(`#content-${uniqueId}`);
       if (!contentElement) {
-        console.log(`[Content] Content element not found for window ${uniqueId} (window closed)`);
         return;
       }
 
@@ -744,14 +723,12 @@
         });
       }
 
-
       // Apply current font size
       const currentFontSize = textSizes.get(uniqueId) || UI_CONFIG.DEFAULT_FONT_SIZE;
       contentElement.style.fontSize = `${currentFontSize}px`;
 
       // Auto-restore if minimized
       if (isMinimized.get(uniqueId)) {
-        console.log(`[Content] Auto-restoring minimized window ${uniqueId}`);
         toggleMinimize(uniqueId);
       }
 
@@ -759,7 +736,6 @@
       console.error('[Content] Error handling message:', error);
     }
   }
-
 
   /**
    * Convert markdown to HTML and sanitize content
@@ -921,7 +897,6 @@
     try {
       const win = floatingWindows.get(uniqueId); // ShadowRoot
       if (!win) {
-        console.log(`[Content] Window ${uniqueId} already closed, skipping loading display`);
         return;
       }
 
@@ -942,7 +917,6 @@
       const win = floatingWindows.get(uniqueId); // ShadowRoot
       if (!win) {
         // This is expected when window is already closed - no need to warn
-        console.log(`[Content] Window ${uniqueId} already closed, skipping loading hide`);
         return;
       }
 

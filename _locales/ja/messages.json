@@ -83,17 +83,9 @@
     "message": "OpenRouter",
     "description": "OpenRouter option"
   },
-  "providerCustom": {
-    "message": "カスタム / その他",
-    "description": "Custom option"
-  },
   "helpProvider": {
-    "message": "プリセットを選択すると推奨エンドポイントが自動入力されます。OpenAI互換プリセットは自動的に/completionsを追加します。別のパスを使用する場合はカスタムを選択してください。",
+    "message": "プリセットを選択すると推奨エンドポイントが自動入力されます。OpenAI互換プリセットは自動的に/completionsを追加します。",
     "description": "Provider help text"
-  },
-  "labelCustomFormat": {
-    "message": "カスタム形式",
-    "description": "Custom provider format label"
   },
   "cardContextMenu": {
     "message": "コンテキストメニュー",
@@ -104,7 +96,7 @@
     "description": "API URL label"
   },
   "helpApiUrl": {
-    "message": "上記のフィールドはOpenAIスタイルのプロバイダーに対して/completionsを自動追加します。プロバイダーが異なるパスを期待する場合は、プリセット選択後に編集してください。",
+    "message": "上記のフィールドは選択したプロバイダープリセットに基づいて自動入力されます。OpenAIスタイルのプロバイダーでは/completionsが自動的に追加されます。",
     "description": "API URL help text"
   },
   "labelModel": {
@@ -146,18 +138,6 @@
   "helpByteLimit": {
     "message": "バイト制限：",
     "description": "Byte limit label"
-  },
-  "cardStreaming": {
-    "message": "ストリーミング",
-    "description": "Streaming card title"
-  },
-  "labelStreaming": {
-    "message": "ストリーミングを有効化",
-    "description": "Streaming label"
-  },
-  "helpStreaming": {
-    "message": "生成中のレスポンスをリアルタイムで受信します。すべてのプロバイダーやモデルがストリーミングをサポートしているわけではありません。",
-    "description": "Streaming help text"
   },
   "cardFontSize": {
     "message": "読みやすさ",

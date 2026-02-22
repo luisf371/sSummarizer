@@ -155,13 +155,6 @@ document.addEventListener('DOMContentLoaded', function() {
       enforceSuffix: '',
       modelHint: 'gemini-1.5-pro'
     },
-    custom: {
-      label: 'Custom / Other',
-      url: '',
-      placeholder: 'https://your-endpoint.example.com/v1/chat',
-      enforceSuffix: '',
-      modelHint: 'gpt-4o-mini'
-    },
     openrouter: {
       label: 'OpenRouter',
       url: 'https://openrouter.ai/api/v1/chat/completions',
@@ -171,67 +164,15 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   };
 
-  function getProviderRequestKind(apiProvider, customFormat) {
-    const provider = (apiProvider || 'openai').toLowerCase();
-    if (provider === 'custom') {
-      return (customFormat || 'openai').toLowerCase();
-    }
-    return provider;
-  }
-
-  function getEnforceSuffixForSelection(apiProvider, customFormat) {
-    const providerKind = getProviderRequestKind(apiProvider, customFormat);
+  function getEnforceSuffixForSelection(apiProvider) {
+    const providerKind = (apiProvider || 'openai').toLowerCase();
     const completionSuffixProviders = new Set(['openai', 'groq', 'perplexity', 'openrouter']);
     return completionSuffixProviders.has(providerKind) ? '/completions' : '';
   }
 
-  function buildOriginPattern(apiUrl) {
-    const parsed = new URL(apiUrl);
-    return `${parsed.protocol}//${parsed.host}/*`;
-  }
-
-  async function ensureHostPermissionForApiUrl(apiUrl, { interactive = false, contextLabel = 'this endpoint' } = {}) {
-    try {
-      const parsed = new URL(apiUrl);
-      const isLocalHttp =
-        parsed.protocol === 'http:' &&
-        (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1');
-
-      if (parsed.protocol !== 'https:' && !isLocalHttp) {
-        showStatus('Only HTTPS endpoints are supported (except localhost/127.0.0.1 for local testing).', 'error');
-        return false;
-      }
-
-      const originPattern = buildOriginPattern(apiUrl);
-      const contains = await new Promise(resolve =>
-        chrome.permissions.contains({ origins: [originPattern] }, resolve)
-      );
-
-      if (contains) {
-        return true;
-      }
-
-      if (!interactive) {
-        return false;
-      }
-
-      const granted = await new Promise(resolve =>
-        chrome.permissions.request({ origins: [originPattern] }, resolve)
-      );
-
-      if (!granted) {
-        showStatus(`Permission denied for ${parsed.origin}. ${contextLabel} cannot continue.`, 'error');
-      }
-      return granted;
-    } catch (error) {
-      showStatus(`Unable to request endpoint permission: ${error.message}`, 'error');
-      return false;
-    }
-  }
-
-  function buildTestConnectionRequest({ apiProvider, customFormat, apiUrl, apiKey, model }) {
-    const providerKind = getProviderRequestKind(apiProvider, customFormat);
-    const provider = (apiProvider || '').toLowerCase();
+  function buildTestConnectionRequest({ apiProvider, apiUrl, apiKey, model }) {
+    const providerKind = (apiProvider || 'openai').toLowerCase();
+    const provider = providerKind;
     const trimmedModel = model?.trim();
     const userMessage = 'Reply with 1';
 
@@ -359,7 +300,7 @@ If and ONLY if timestamps are provided;
     return {
       apiKey: apiKeyInput.value.trim(),
       apiUrl: apiUrlInput.value.trim(),
-      apiProvider: (apiProviderSelect?.value || 'custom'),
+      apiProvider: (apiProviderSelect?.value || 'openai'),
       model: modelInput.value.trim(),
       systemPrompt: systemPromptInput.value.trim(),
       timestampPrompt: timestampPromptInput.value.trim(),
@@ -371,14 +312,13 @@ If and ONLY if timestamps are provided;
       redditDepth: parseInt(redditDepthInput?.value || 3, 10),
       redditSort: redditSortInput?.value || 'current',
       enableContextMenu: enableContextMenuInput?.checked || false,
-      enableDebugMode: enableDebugModeInput?.checked || false,
-      customFormat: document.getElementById('custom-format')?.value || ''
+      enableDebugMode: enableDebugModeInput?.checked || false
     };
   }
 
   function loadSavedOptions() {
     try {
-      chrome.storage.sync.get(['apiKey', 'apiUrl', 'apiProvider', 'model', 'systemPrompt', 'timestampPrompt', 'includeTimestamps', 'defaultFontSize', 'subtitlePriority', 'preferredLanguage', 'redditMaxComments', 'redditDepth', 'redditSort', 'enableContextMenu', 'enableDebugMode', 'customFormat'], function(result) {
+      chrome.storage.local.get(['apiKey', 'apiUrl', 'apiProvider', 'model', 'systemPrompt', 'timestampPrompt', 'includeTimestamps', 'defaultFontSize', 'subtitlePriority', 'preferredLanguage', 'redditMaxComments', 'redditDepth', 'redditSort', 'enableContextMenu', 'enableDebugMode'], function(result) {
         if (chrome.runtime.lastError) {
           showStatus('Error loading saved settings: ' + chrome.runtime.lastError.message, 'error');
           return;
@@ -386,7 +326,8 @@ If and ONLY if timestamps are provided;
 
         apiKeyInput.value = result.apiKey || '';
         if (apiProviderSelect) {
-          apiProviderSelect.value = result.apiProvider || 'openai';
+          const savedProvider = (result.apiProvider || 'openai').toLowerCase();
+          apiProviderSelect.value = PROVIDER_PRESETS[savedProvider] ? savedProvider : 'openai';
         }
         apiUrlInput.value = result.apiUrl || '';
         modelInput.value = result.model || '';
@@ -401,12 +342,9 @@ If and ONLY if timestamps are provided;
         if (redditSortInput) redditSortInput.value = result.redditSort || 'current';
         if (enableContextMenuInput) enableContextMenuInput.checked = result.enableContextMenu ?? true;
         if (enableDebugModeInput) enableDebugModeInput.checked = result.enableDebugMode || false;
-        const customFormatSelect = document.getElementById('custom-format');
-        if (customFormatSelect) customFormatSelect.value = result.customFormat || '';
         applyProviderPreset({ shouldResetUrl: !result.apiUrl });
         systemPromptInput.dispatchEvent(new Event('input', { bubbles: true }));
         toggleTimestampPromptVisibility();
-        console.log('[Options] Loaded saved settings', result);
       });
     } catch (error) {
       console.error('[Options] Error loading settings:', error);
@@ -430,8 +368,6 @@ If and ONLY if timestamps are provided;
 
       setupImmediateValidationReset();
 
-  
-
       if (includeTimestampsInput) {
 
         includeTimestampsInput.addEventListener('change', toggleTimestampPromptVisibility);
@@ -439,8 +375,6 @@ If and ONLY if timestamps are provided;
       }
 
     }
-
-  
 
     function toggleTimestampPromptVisibility() {
         if (!timestampPromptContainer || !includeTimestampsInput || !timestampPromptInput) return;
@@ -451,48 +385,32 @@ If and ONLY if timestamps are provided;
 
     function setupProviderSelector() {
       if (!apiProviderSelect || !apiUrlInput) return;
-      const customFormatContainer = document.getElementById('custom-format-container');
-      const customFormatSelect = document.getElementById('custom-format');
 
       function syncEnforceSuffix() {
-        apiUrlInput.dataset.enforceSuffix = getEnforceSuffixForSelection(
-          apiProviderSelect?.value,
-          customFormatSelect?.value
-        );
-      }
-      
-      function toggleCustomFormatVisibility() {
-        if (customFormatContainer) {
-          customFormatContainer.style.display = apiProviderSelect.value === 'custom' ? 'block' : 'none';
-        }
+        apiUrlInput.dataset.enforceSuffix = getEnforceSuffixForSelection(apiProviderSelect?.value);
       }
       
       applyProviderPreset({ shouldResetUrl: !apiUrlInput.value });
       syncEnforceSuffix();
-      toggleCustomFormatVisibility();
       
       apiProviderSelect.addEventListener('change', () => {
         applyProviderPreset({ shouldResetUrl: true });
         syncEnforceSuffix();
-        toggleCustomFormatVisibility();
       });
-      if (customFormatSelect) {
-        customFormatSelect.addEventListener('change', () => {
-          syncEnforceSuffix();
-          enforceProviderSuffix();
-        });
-      }
       apiUrlInput.addEventListener('blur', enforceProviderSuffix);
     }
 
     function applyProviderPreset({ shouldResetUrl = false } = {}) {
       if (!apiUrlInput) return;
-      const key = apiProviderSelect?.value || 'custom';
-      const config = PROVIDER_PRESETS[key] || PROVIDER_PRESETS.custom;
-      const customFormat = document.getElementById('custom-format')?.value || '';
+      let key = apiProviderSelect?.value || 'openai';
+      if (!PROVIDER_PRESETS[key]) {
+        key = 'openai';
+        if (apiProviderSelect) apiProviderSelect.value = key;
+      }
+      const config = PROVIDER_PRESETS[key];
       apiUrlInput.placeholder = config.placeholder || 'https://api.example.com/v1/chat';
-      apiUrlInput.dataset.enforceSuffix = getEnforceSuffixForSelection(key, customFormat);
-      apiUrlInput.disabled = key !== 'custom';
+      apiUrlInput.dataset.enforceSuffix = getEnforceSuffixForSelection(key);
+      apiUrlInput.disabled = true;
       if (shouldResetUrl || !apiUrlInput.value.trim()) {
         apiUrlInput.value = config.url || '';
       }
@@ -521,8 +439,6 @@ If and ONLY if timestamps are provided;
       }
       apiUrlInput.value = `${normalized}${suffix}`;
     }
-
-   
 
     function validateApiUrl(url) {
 
@@ -556,8 +472,6 @@ If and ONLY if timestamps are provided;
 
     }
 
-  
-
     function validateApiKey(key) {
 
       const keyInput = apiKeyInput;
@@ -572,8 +486,6 @@ If and ONLY if timestamps are provided;
 
     }
 
-  
-
     function validateModel(model) {
 
       const modelInput = document.getElementById('model');
@@ -587,8 +499,6 @@ If and ONLY if timestamps are provided;
       return true;
 
     }
-
-  
 
     function validateSystemPrompt(prompt) {
 
@@ -612,8 +522,6 @@ If and ONLY if timestamps are provided;
 
     }
 
-  
-
     function setFieldError(field, message) {
 
       field.style.borderColor = 'var(--error-color)';
@@ -623,8 +531,6 @@ If and ONLY if timestamps are provided;
       field.title = message;
 
     }
-
-  
 
     function setFieldSuccess(field) {
 
@@ -636,8 +542,6 @@ If and ONLY if timestamps are provided;
 
     }
 
-  
-
     function resetFieldState(field) {
 
       field.style.borderColor = '';
@@ -648,17 +552,11 @@ If and ONLY if timestamps are provided;
 
     }
 
-  
-
     async function handleFormSubmit(event) {
 
       event.preventDefault();
 
-      
-
       const currentValues = getFormValues();
-
-  
 
       const isApiUrlValid = validateApiUrl(currentValues.apiUrl);
 
@@ -668,11 +566,6 @@ If and ONLY if timestamps are provided;
 
       const isSystemPromptValid = validateSystemPrompt(currentValues.systemPrompt);
 
-      if (currentValues.apiProvider === 'custom' && !currentValues.customFormat) {
-        showStatus('Please select a Custom Format when using Custom provider', 'error');
-        return;
-      }
-
       if (!isApiUrlValid || !isApiKeyValid || !isModelValid || !isSystemPromptValid) {
 
         showStatus('Please fix the validation errors above', 'error');
@@ -680,18 +573,6 @@ If and ONLY if timestamps are provided;
         return;
 
       }
-
-      if (currentValues.apiProvider === 'custom') {
-        const granted = await ensureHostPermissionForApiUrl(currentValues.apiUrl, {
-          interactive: true,
-          contextLabel: 'Saving custom provider settings'
-        });
-        if (!granted) {
-          return;
-        }
-      }
-
-  
 
       const buttonText = saveButton.querySelector('.button-text');
 
@@ -701,9 +582,7 @@ If and ONLY if timestamps are provided;
 
       showStatus('Saving settings...', 'info');
 
-  
-
-      chrome.storage.sync.set({
+      chrome.storage.local.set({
 
         ...currentValues,
 
@@ -716,8 +595,6 @@ If and ONLY if timestamps are provided;
         saveButton.disabled = false;
 
         if (buttonText) buttonText.textContent = 'Save Settings';
-
-        
 
         if (chrome.runtime.lastError) {
 
@@ -735,8 +612,6 @@ If and ONLY if timestamps are provided;
 
     }
 
-  
-
     function showStatus(message, type) {
       statusDiv.dataset.type = type;
       statusDiv.textContent = message;
@@ -750,8 +625,6 @@ If and ONLY if timestamps are provided;
         }, 3000);
       }
     }
-
-  
 
     function setupPasswordToggle() {
 
@@ -772,8 +645,6 @@ If and ONLY if timestamps are provided;
       });
 
     }
-
-  
 
     function setupByteCounter() {
 
@@ -799,8 +670,6 @@ If and ONLY if timestamps are provided;
 
     }
 
-    
-
     function setupDefaultPromptButton() {
 
       if (!defaultPromptBtn) return;
@@ -815,8 +684,6 @@ If and ONLY if timestamps are provided;
 
     }
 
-  
-
     function setupDefaultTimestampPromptButton() {
 
       if (!defaultTimestampPromptBtn) return;
@@ -828,8 +695,6 @@ If and ONLY if timestamps are provided;
       });
 
     }
-
-  
 
     function setupImmediateValidationReset() {
 
@@ -852,12 +717,7 @@ If and ONLY if timestamps are provided;
       }
       
       const currentValues = getFormValues();
-      const { apiUrl, apiKey, model, apiProvider, customFormat } = currentValues;
-
-      if (apiProvider === 'custom' && !customFormat) {
-        showStatus('Please select a Custom Format before testing', 'error');
-        return;
-      }
+      const { apiUrl, apiKey, model } = currentValues;
 
       if (!apiUrl || !apiKey || !model) {
         showStatus('API URL, API Key, and Model Name are required before testing', 'error');
@@ -873,16 +733,6 @@ If and ONLY if timestamps are provided;
       showStatus('Testing API connection...', 'info');
 
       try {
-        if (apiProvider === 'custom') {
-          const granted = await ensureHostPermissionForApiUrl(apiUrl, {
-            interactive: true,
-            contextLabel: 'Test Connection'
-          });
-          if (!granted) {
-            return;
-          }
-        }
-
         const { fetchUrl, fetchOptions } = buildTestConnectionRequest(currentValues);
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 10000);
@@ -928,7 +778,7 @@ If and ONLY if timestamps are provided;
     
     if (!addBtn || !listContainer) return;
     
-    chrome.storage.sync.get(['slashCommands'], (result) => {
+    chrome.storage.local.get(['slashCommands'], (result) => {
       slashCommands = result.slashCommands || [];
       renderSlashCommands();
     });
@@ -1062,11 +912,9 @@ If and ONLY if timestamps are provided;
       cmd.command.trim() && cmd.prompt.trim()
     );
     
-    chrome.storage.sync.set({ slashCommands: validCommands }, () => {
+    chrome.storage.local.set({ slashCommands: validCommands }, () => {
       if (chrome.runtime.lastError) {
         console.error('[Options] Error saving slash commands:', chrome.runtime.lastError);
-      } else {
-        console.log('[Options] Slash commands saved:', validCommands.length);
       }
     });
   }

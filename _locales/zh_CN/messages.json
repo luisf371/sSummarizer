@@ -83,17 +83,9 @@
     "message": "OpenRouter",
     "description": "OpenRouter option"
   },
-  "providerCustom": {
-    "message": "自定义 / 其他",
-    "description": "Custom option"
-  },
   "helpProvider": {
-    "message": "选择一个预设以自动填充推荐的端点。兼容OpenAI的预设会自动添加/completions。选择自定义以使用不同的路径。",
+    "message": "选择一个预设以自动填充推荐的端点。兼容OpenAI的预设会自动添加/completions。",
     "description": "Provider help text"
-  },
-  "labelCustomFormat": {
-    "message": "自定义格式",
-    "description": "Custom provider format label"
   },
   "cardContextMenu": {
     "message": "右键菜单",
@@ -104,7 +96,7 @@
     "description": "API URL label"
   },
   "helpApiUrl": {
-    "message": "上面的字段会为OpenAI风格的提供商自动添加/completions。如果您的提供商需要不同的路径，请在选择预设后编辑它。",
+    "message": "上面的字段会根据所选提供商预设自动填充。OpenAI风格的提供商会自动添加/completions。",
     "description": "API URL help text"
   },
   "labelModel": {
@@ -146,18 +138,6 @@
   "helpByteLimit": {
     "message": "字节限制：",
     "description": "Byte limit label"
-  },
-  "cardStreaming": {
-    "message": "流式传输",
-    "description": "Streaming card title"
-  },
-  "labelStreaming": {
-    "message": "启用流式传输",
-    "description": "Streaming label"
-  },
-  "helpStreaming": {
-    "message": "实时接收生成的响应。并非所有提供商或模型都支持流式传输。",
-    "description": "Streaming help text"
   },
   "cardFontSize": {
     "message": "阅读舒适度",

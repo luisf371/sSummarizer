@@ -83,17 +83,9 @@
     "message": "OpenRouter",
     "description": "OpenRouter option"
   },
-  "providerCustom": {
-    "message": "Custom / Other",
-    "description": "Custom option"
-  },
   "helpProvider": {
-    "message": "Select a preset to auto-fill the recommended endpoint. OpenAI-compatible presets automatically append /completions. Choose Custom to supply different paths.",
+    "message": "Select a preset to auto-fill the recommended endpoint. OpenAI-compatible presets automatically append /completions.",
     "description": "Provider help text"
-  },
-  "labelCustomFormat": {
-    "message": "Custom Format",
-    "description": "Custom provider format label"
   },
   "cardContextMenu": {
     "message": "Context Menu",
@@ -104,7 +96,7 @@
     "description": "API URL label"
   },
   "helpApiUrl": {
-    "message": "The field above auto-adds /completions for OpenAI-style providers. Edit it after selecting a preset if your provider expects a different path.",
+    "message": "The field above is auto-filled from the selected provider preset. OpenAI-style providers automatically append /completions.",
     "description": "API URL help text"
   },
   "labelModel": {
@@ -146,18 +138,6 @@
   "helpByteLimit": {
     "message": "Byte limit:",
     "description": "Byte limit label"
-  },
-  "cardStreaming": {
-    "message": "Streaming",
-    "description": "Streaming card title"
-  },
-  "labelStreaming": {
-    "message": "Enable Streaming",
-    "description": "Streaming label"
-  },
-  "helpStreaming": {
-    "message": "Receive responses in real-time as they are generated. Not all providers or models support streaming.",
-    "description": "Streaming help text"
   },
   "cardFontSize": {
     "message": "Reading comfort",

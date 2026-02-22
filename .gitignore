@@ -1,6 +1,7 @@
 .delete
 fork.md
 .sisyphus/
+.claude/
 plan_api_ignore/
 
 # === OS / System files ===

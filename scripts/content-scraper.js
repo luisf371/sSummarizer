@@ -7,16 +7,13 @@
  * Based on the Python youtube-transcript-api implementation
  */
 async function extractYouTubeCaptions() {
-    console.log('[YT Extractor] Starting YouTube transcript extraction');
 
     try {
         // Method 1: Use YouTube Internal API
-        console.log('[YT Extractor] Attempting Method: YouTube Internal API');
         const videoId = extractVideoIdFromUrl(window.location.href);
         if (videoId) {
             const transcriptData = await getTranscriptViaInternalAPI(videoId);
             if (transcriptData && transcriptData.length > 100) {
-                console.log('[YT Extractor] Success! Extracted transcript via internal API, length:', transcriptData.length);
                 return transcriptData;
             }
         } else {
@@ -24,15 +21,12 @@ async function extractYouTubeCaptions() {
         }
 
         // Method 2: Try to access transcript panel
-        console.log('[YT Extractor] Attempting Method: Transcript panel extraction');
         const transcriptPanelData = await extractFromTranscriptPanel();
         if (transcriptPanelData && transcriptPanelData.length > 100) {
-            console.log('[YT Extractor] Success! Extracted from transcript panel, length:', transcriptPanelData.length);
             return transcriptPanelData;
         }
 
         // Method 3: Fallback to title and description
-        console.log('[YT Extractor] All transcript methods failed, falling back to title and description');
         return await fallbackToTitleDescription();
 
     } catch (error) {
@@ -72,7 +66,6 @@ function extractVideoIdFromUrl(url) {
  */
 async function getTranscriptViaInternalAPI(videoId) {
   try {
-    console.log('[YT Extractor] Fetching watch page HTML for video:', videoId);
     
     // Step 1: Fetch the YouTube watch page HTML
     const watchUrl = `https://www.youtube.com/watch?v=${videoId}`;
@@ -83,22 +76,18 @@ async function getTranscriptViaInternalAPI(videoId) {
     });
     
     if (!response.ok) {
-      console.log('[YT Extractor] Failed to fetch watch page, status:', response.status);
       return null;
     }
     
     const html = await response.text();
-    console.log('[YT Extractor] Fetched HTML, length:', html.length);
     
     // Step 2: Extract INNERTUBE_API_KEY from HTML
     const apiKeyMatch = html.match(/"INNERTUBE_API_KEY"\s*:\s*"([a-zA-Z0-9_-]+)"/);
     if (!apiKeyMatch) {
-      console.log('[YT Extractor] Could not find INNERTUBE_API_KEY in HTML');
       return null;
     }
     
     const apiKey = apiKeyMatch[1];
-    console.log('[YT Extractor] Extracted INNERTUBE_API_KEY:', apiKey);
     
     // Step 3: Make request to YouTube InnerTube API
     const innertubeUrl = `https://www.youtube.com/youtubei/v1/player?key=${apiKey}`;
@@ -120,25 +109,20 @@ async function getTranscriptViaInternalAPI(videoId) {
     });
     
     if (!innertubeResponse.ok) {
-      console.log('[YT Extractor] InnerTube API request failed, status:', innertubeResponse.status);
       return null;
     }
     
     const innertubeData = await innertubeResponse.json();
-    console.log('[YT Extractor] InnerTube API response received');
     
     // Step 4: Extract captions from response
     const captions = innertubeData?.captions?.playerCaptionsTracklistRenderer;
     if (!captions || !captions.captionTracks) {
-      console.log('[YT Extractor] No caption tracks found in InnerTube response');
       return null;
     }
-    
-    console.log('[YT Extractor] Found caption tracks:', captions.captionTracks.length);
 
     // Step 5: Load user preferences and select best caption track
     const { subtitlePriority, preferredLanguage } = await new Promise(resolve =>
-      chrome.storage.sync.get({ subtitlePriority: 'auto', preferredLanguage: 'en' }, resolve)
+      chrome.storage.local.get({ subtitlePriority: 'auto', preferredLanguage: 'en' }, resolve)
     );
     const lang = (preferredLanguage || 'en').toLowerCase();
     const preferAuto = (subtitlePriority || 'auto') === 'auto';
@@ -162,14 +146,8 @@ async function getTranscriptViaInternalAPI(videoId) {
     }
     
     if (!selectedTrack?.baseUrl) {
-      console.log('[YT Extractor] No suitable caption track found');
       return null;
     }
-    
-    console.log('[YT Extractor] Selected caption track:', {
-      language: selectedTrack.name?.runs?.[0]?.text || selectedTrack.languageCode,
-      isGenerated: selectedTrack.kind === 'asr'
-    });
     
     // Step 6: Fetch and parse caption XML
     let captionUrl = selectedTrack.baseUrl;
@@ -181,16 +159,12 @@ async function getTranscriptViaInternalAPI(videoId) {
       captionUrl += `&tlang=${encodeURIComponent(lang)}`;
     }
     
-    console.log('[YT Extractor] Fetching captions from URL:', captionUrl);
-    
     const captionResponse = await fetch(captionUrl);
     if (!captionResponse.ok) {
-      console.log('[YT Extractor] Failed to fetch captions, status:', captionResponse.status);
       return null;
     }
     
     const xmlText = await captionResponse.text();
-    console.log('[YT Extractor] Fetched caption XML, length:', xmlText.length);
     
     // Step 7: Parse XML and extract text
     return await parseYouTubeCaptionXML(xmlText);
@@ -217,16 +191,13 @@ function formatTimestamp(totalSeconds) {
     return `[${pad(hours)}:${pad(minutes)}:${pad(seconds)}]`;
 }
 
-
 /**
  * Parse YouTube caption XML (mimicking Python ElementTree parsing)
  */
 async function parseYouTubeCaptionXML(xmlText) {
   try {
-    console.log('[YT Extractor] Parsing caption XML');
     
     if (!xmlText || !xmlText.trim()) {
-      console.log('[YT Extractor] Empty XML text');
       return null;
     }
     
@@ -243,10 +214,8 @@ async function parseYouTubeCaptionXML(xmlText) {
     
     // Extract text elements (equivalent to Python's ElementTree.fromstring(raw_data))
     const textElements = xmlDoc.querySelectorAll('text');
-    console.log('[YT Extractor] Found text elements:', textElements.length);
     
     if (textElements.length === 0) {
-      console.log('[YT Extractor] No text elements found in XML');
       return null;
     }
     
@@ -278,15 +247,13 @@ async function parseYouTubeCaptionXML(xmlText) {
       }
     }
     
-    console.log('[YT Extractor] Parsed snippets:', snippets.length);
-    
     if (snippets.length === 0) {
       return null;
     }
     
     // Get timestamp setting
     const { includeTimestamps } = await new Promise(resolve => 
-        chrome.storage.sync.get({ includeTimestamps: false }, resolve)
+        chrome.storage.local.get({ includeTimestamps: false }, resolve)
     );
 
     // Sort by start time and join text
@@ -306,7 +273,6 @@ async function parseYouTubeCaptionXML(xmlText) {
 //Input contains timestamps: ${includeTimestamps}`;
 //    fullTranscript += subtitleInfo;
 
-    console.log('[YT Extractor] Full transcript length:', fullTranscript.length);
     return fullTranscript;
     
   } catch (error) {
@@ -323,7 +289,6 @@ async function extractFromTranscriptPanel() {
     // Try to find and click transcript button
     const transcriptButton = document.querySelector('button[aria-label*="transcript" i], button[aria-label*="Show transcript" i]');
     if (transcriptButton && !transcriptButton.getAttribute('aria-pressed')) {
-      console.log('[YT Extractor] Clicking transcript button');
       transcriptButton.click();
       await new Promise(resolve => setTimeout(resolve, 2000));
     }
@@ -338,7 +303,6 @@ async function extractFromTranscriptPanel() {
     for (const selector of transcriptSelectors) {
       const transcriptItems = document.querySelectorAll(selector);
       if (transcriptItems.length > 0) {
-        console.log('[YT Extractor] Found transcript segments:', transcriptItems.length, 'with selector:', selector);
         const text = Array.from(transcriptItems).map(item => item.textContent?.trim()).filter(Boolean).join(' ');
         
         if (text.length > 100) {
@@ -346,7 +310,6 @@ async function extractFromTranscriptPanel() {
         }
       }
     }
-
     
     return null;
     
@@ -361,7 +324,6 @@ async function extractFromTranscriptPanel() {
  */
 async function fallbackToTitleDescription() {
   try {
-    console.log('[YT Extractor] Using title and description fallback');
     const title = await extractVideoTitle();
     const description = await extractVideoDescription();
     
@@ -435,11 +397,10 @@ function getPageContent() {
  * Cleans noise (ads, timestamps, sidebars) and limits comment depth/count.
  */
 async function extractRedditThread() {
-  console.log('[Reddit Extractor] Starting Reddit thread extraction');
 
   // Load user settings for limits and sort
   const { redditMaxComments, redditDepth, redditSort } = await new Promise(resolve =>
-    chrome.storage.sync.get({ redditMaxComments: 100, redditDepth: 3, redditSort: 'current' }, resolve)
+    chrome.storage.local.get({ redditMaxComments: 100, redditDepth: 3, redditSort: 'current' }, resolve)
   );
   
   const parsedMaxComments = Number.parseInt(redditMaxComments, 10);
@@ -447,8 +408,6 @@ async function extractRedditThread() {
   const maxComments = Number.isFinite(parsedMaxComments) ? parsedMaxComments : 100;
   const depthLimit = Number.isFinite(parsedDepth) ? parsedDepth : 3;
   const sortType = redditSort || 'current';
-
-  console.log('[Reddit Extractor] Settings:', { maxComments, depthLimit, sortType });
 
   try {
     // Handle Sort Logic
@@ -463,7 +422,6 @@ async function extractRedditThread() {
         // But usually ?sort= works on threads too.
         // If current sort != requested, fetch.
         if (currentSort !== sortType) {
-             console.log(`[Reddit Extractor] Fetching sorted version: ${sortType}`);
              url.searchParams.set('sort', sortType);
              url.searchParams.set('limit', '500'); // Request more comments
              try {
@@ -473,7 +431,6 @@ async function extractRedditThread() {
                      const parser = new DOMParser();
                      doc = parser.parseFromString(html, 'text/html');
                      isFetched = true;
-                     console.log('[Reddit Extractor] Fetched and parsed sorted HTML');
                  } else {
                      console.warn('[Reddit Extractor] Failed to fetch sorted page, using current.');
                  }
@@ -515,14 +472,11 @@ async function extractRedditThread() {
     const shredditComments = doc.querySelectorAll('shreddit-comment');
     
     if (shredditComments.length > 0) {
-        console.log('[Reddit Extractor] Detected Shreddit (Modern) layout');
         
         const allComments = Array.from(shredditComments);
         // Filter for top-level comments. 
         // In fetched HTML, attributes might be reliable.
         const topLevelComments = allComments.filter(c => c.getAttribute('depth') === '0' || !c.parentElement.closest('shreddit-comment'));
-        
-        console.log(`[Reddit Extractor] Found ${topLevelComments.length} top-level comments.`);
         
         // Take top N threads
         const threadsToProcess = topLevelComments.slice(0, maxComments);
@@ -533,7 +487,6 @@ async function extractRedditThread() {
         }
 
     } else {
-        console.log('[Reddit Extractor] Detected Legacy/Standard layout');
         
         // Legacy Top Levels are usually direct children of the nestedlisting, OR have data-level=0
         // We must avoid .child comments
@@ -544,8 +497,6 @@ async function extractRedditThread() {
         
         const targets = topLevelContainers.length > 0 ? topLevelContainers : doc.querySelectorAll('.Comment:not(.child)'); 
         const sliced = Array.from(targets).slice(0, maxComments);
-        
-        console.log(`[Reddit Extractor] Found ${targets.length} legacy candidates, processing ${sliced.length}`);
 
         for (const commentNode of sliced) {
             const threadText = extractLegacyCommentTree(commentNode, 0, depthLimit);
@@ -563,7 +514,6 @@ TOP COMMENTS (${commentsText.length} threads extracted, Sort: ${sortType}):
 ${commentsText.join('\n\n')}
 `;
 
-    console.log('[Reddit Extractor] Extraction complete, length:', formattedOutput.length);
     return formattedOutput;
 
   } catch (e) {
@@ -598,7 +548,6 @@ function extractCommentTree(commentNode, currentDepth, maxDepth) {
     
     return text;
 }
-
 
 /**
  * Recursive extractor for Legacy Reddit comments
