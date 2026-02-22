@@ -401,7 +401,7 @@
       makeResizable(win, win.querySelector(`#resize-handle-${uniqueId}`));
 
     } catch (error) {
-      console.error('[Content] Error creating floating window:', error);
+      console.log('[Content] Error creating floating window:', error);
       // Clean up on error
       cleanupWindowState(uniqueId);
     }
@@ -504,7 +504,7 @@
       }
 
     } catch (error) {
-      console.error('[Content] Error setting up event listeners:', error);
+      console.log('[Content] Error setting up event listeners:', error);
     }
   }
 
@@ -530,7 +530,7 @@
       }
       cleanupWindowState(uniqueId);
     } catch (error) {
-      console.error('[Content] Error closing window:', error);
+      console.log('[Content] Error closing window:', error);
     }
   }
 
@@ -625,7 +625,7 @@
         chrome.storage.local.set({ defaultFontSize: newSize });
       }
     } catch (error) {
-      console.error('[Content] Error changing font size:', error);
+      console.log('[Content] Error changing font size:', error);
     }
   }
 
@@ -671,7 +671,7 @@
         isMinimized.set(uniqueId, true);
       }
     } catch (error) {
-      console.error('[Content] Error toggling minimize:', error);
+      console.log('[Content] Error toggling minimize:', error);
     }
   }
 
@@ -733,7 +733,7 @@
       }
 
     } catch (error) {
-      console.error('[Content] Error handling message:', error);
+      console.log('[Content] Error handling message:', error);
     }
   }
 
@@ -762,10 +762,6 @@
     });
   }
 
-  function getIndent(line) {
-    const match = line.match(/^(\s*)/);
-    return match ? match[1].length : 0;
-  }
 
   function convertMarkdownToHtml(markdown) {
     const processInline = (text) => {
@@ -905,7 +901,7 @@
         loadingOverlay.style.display = 'flex';
       }
     } catch (error) {
-      console.error('[Content] Error showing loading:', error);
+      console.log('[Content] Error showing loading:', error);
     }
   }
 
@@ -925,7 +921,7 @@
         loadingOverlay.style.display = 'none';
       }
     } catch (error) {
-      console.error('[Content] Error hiding loading:', error);
+      console.log('[Content] Error hiding loading:', error);
     }
   }
 
@@ -1302,7 +1298,7 @@
       messages: history
     }, (response) => {
       if (chrome.runtime.lastError) {
-        console.error('Error sending follow-up:', chrome.runtime.lastError.message);
+        console.log('Error sending follow-up:', chrome.runtime.lastError.message);
         setChatEnabled(uniqueId, true, 'placeholderFollowUp');
       }
     });

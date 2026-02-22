@@ -360,11 +360,11 @@
     "description": "Test success message"
   },
   "stepSlash": {
-    "message": "Quick Commands",
+    "message": "Quick /slash Selection",
     "description": "Short label for slash commands section"
   },
   "stepSlashTitle": {
-    "message": "Quick Commands",
+    "message": "Quick /slash Selection",
     "description": "Title for slash commands section"
   },
   "stepSlashDesc": {
@@ -412,7 +412,7 @@
     "description": "Message shown in dropdown when no commands match"
   },
   "menuQuickCommands": {
-    "message": "Quick Commands",
+    "message": "Quick /slash Selection",
     "description": "Label for the quick commands parent menu item"
   },
   "menuConfigureCommands": {

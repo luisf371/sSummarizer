@@ -234,7 +234,7 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (info.menuItemId === CONFIG.CONTEXT_MENU_ID && info.selectionText) {
     // Existing: Summarize selection with default prompt
     handleIconClick(tab, info.selectionText).catch(err => {
-      console.error('[Background] Context menu handler error:', err);
+      console.log('[Background] Context menu handler error:', err);
     });
   } else if (info.menuItemId.startsWith('slash-cmd-')) {
     // New: Slash command clicked from extension icon menu
@@ -244,10 +244,10 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
       const cmd = result.slashCommands?.[index];
       if (cmd) {
         handleIconClick(tab, null, cmd.prompt, cmd.command).catch(err => {
-          console.error('[Background] Slash command handler error:', err);
+          console.log('[Background] Slash command handler error:', err);
         });
       } else {
-        console.error('[Background] Slash command not found at index:', index);
+        console.log('[Background] Slash command not found at index:', index);
       }
     });
   }
@@ -262,10 +262,10 @@ async function setupContextMenu() {
 
   // Remove existing to avoid duplicates or to disable
   chrome.contextMenus.removeAll(() => {
-    // Create parent menu for Quick Commands on extension icon
+    // Create parent menu for Quick /slash Selection on extension icon
     chrome.contextMenus.create({
       id: "quick-commands-parent",
-      title: chrome.i18n.getMessage('menuQuickCommands') || "Quick Commands",
+      title: chrome.i18n.getMessage('menuQuickCommands') || "Quick /slash Selection",
       contexts: ["action"]
     });
 
@@ -321,14 +321,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 // Wrap click logic in its own async function so we can catch errors
 chrome.action.onClicked.addListener((tab) => {
   handleIconClick(tab).catch(err => {
-    console.error('[Background] handleIconClick error:', err);
+    console.log('[Background] handleIconClick error:', err);
   });
 });
 
 async function handleIconClick(tab, directTextContent = null, customPrompt = null, commandName = null) {
   // Validate tab and URL
   if (!tab || !tab.id || !tab.url) {
-    console.error('[Background] Invalid tab object:', tab);
+    console.log('[Background] Invalid tab object:', tab);
     return;
   }
 
@@ -346,7 +346,7 @@ async function handleIconClick(tab, directTextContent = null, customPrompt = nul
     files: ['content.js']
   }, async (injectionResults) => {
     if (chrome.runtime.lastError) {
-      console.error('[Background] Failed to inject content.js:', chrome.runtime.lastError.message);
+      console.log('[Background] Failed to inject content.js:', chrome.runtime.lastError.message);
       tabIdMap.delete(uniqueId);
       return; // Graceful failure - can't show UI on restricted pages
     }
@@ -356,7 +356,7 @@ async function handleIconClick(tab, directTextContent = null, customPrompt = nul
       await sendMessageSafely(tab.id, { action: 'createFloatingWindow', uniqueId });
       await sendMessageSafely(tab.id, { action: 'showLoading', uniqueId });
     } catch (error) {
-      console.error('[Background] Failed to initialize UI:', error);
+      console.log('[Background] Failed to initialize UI:', error);
       tabIdMap.delete(uniqueId);
       return;
     }
@@ -390,7 +390,7 @@ async function handleIconClick(tab, directTextContent = null, customPrompt = nul
           function: () => extractYouTubeCaptions() // This function uses the Python approach
         }, (results) => {
           if (chrome.runtime.lastError) {
-            console.error('[Background] Script injection error:', chrome.runtime.lastError.message);
+            console.log('[Background] Script injection error:', chrome.runtime.lastError.message);
             handleApiError(uniqueId, `Failed to extract content: ${chrome.runtime.lastError.message}`);
             return;
           }
@@ -418,7 +418,7 @@ async function handleIconClick(tab, directTextContent = null, customPrompt = nul
           function: () => extractRedditThread()
         }, (results) => {
           if (chrome.runtime.lastError) {
-            console.error('[Background] Reddit script error:', chrome.runtime.lastError.message);
+            console.log('[Background] Reddit script error:', chrome.runtime.lastError.message);
             handleApiError(uniqueId, `Failed to extract Reddit thread: ${chrome.runtime.lastError.message}`);
             return;
           }
@@ -442,7 +442,7 @@ async function handleIconClick(tab, directTextContent = null, customPrompt = nul
           function: () => getPageContent() // This function is from the injected script
         }, (results) => {
           if (chrome.runtime.lastError) {
-            console.error('[Background] Script injection error:', chrome.runtime.lastError.message);
+            console.log('[Background] Script injection error:', chrome.runtime.lastError.message);
             handleApiError(uniqueId, `Failed to get page content: ${chrome.runtime.lastError.message}`);
             return;
           }
@@ -589,7 +589,7 @@ async function makeApiCall(inputData, uniqueId, customUserPrompt = null, command
     const text = inputData;
     // Validate and truncate text if necessary
     if (!text) {
-      console.error('[API] Invalid text input');
+      console.log('[API] Invalid text input');
       await handleApiError(uniqueId, 'Invalid text content');
       return;
     }
@@ -635,22 +635,27 @@ async function makeApiCall(inputData, uniqueId, customUserPrompt = null, command
       ...inputData
     ];
   } else {
-    console.error('[API] Invalid input data type');
+    console.log('[API] Invalid input data type');
     return;
   }
 
   // Validate configuration
   if (!apiUrl || !apiKey) {
-    console.error('[API] API URL or API Key not set');
+    console.log('[API] API URL or API Key not set');
     await handleApiError(uniqueId, 'API URL or API Key not set. Please configure in extension options by right-clicking the extension icon.');
     return;
   }
 
-  // Validate URL format
+  // Validate URL format and enforce HTTPS
   try {
-    new URL(apiUrl);
+    const parsedUrl = new URL(apiUrl);
+    if (parsedUrl.protocol !== 'https:') {
+      console.log('[API] Non-HTTPS API URL rejected:', apiUrl);
+      await handleApiError(uniqueId, 'API URL must use HTTPS. Please reconfigure in extension options.');
+      return;
+    }
   } catch (e) {
-    console.error('[API] Invalid API URL format:', apiUrl);
+    console.log('[API] Invalid API URL format:', apiUrl);
     await handleApiError(uniqueId, 'Invalid API URL format. Please check your configuration.');
     return;
   }
@@ -686,14 +691,14 @@ async function makeApiCall(inputData, uniqueId, customUserPrompt = null, command
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('[API] Error response body:', errorText);
+      console.log('[API] Error response body:', errorText);
       abortControllers.delete(uniqueId);
       throw new Error(`HTTP ${response.status}: ${response.statusText} - ${errorText.substring(0, 200)}`);
     }
 
     const tab = tabIdMap.get(uniqueId);
     if (!tab) {
-      console.error('[API] No tab found for uniqueId:', uniqueId);
+      console.log('[API] No tab found for uniqueId:', uniqueId);
       abortControllers.delete(uniqueId);
       return;
     }
@@ -762,7 +767,7 @@ async function makeApiCall(inputData, uniqueId, customUserPrompt = null, command
     } catch (error) {
       if (error.name === 'AbortError') {
       } else {
-        console.error('[API] Stream reading error:', error);
+        console.log('[API] Stream reading error:', error);
       }
       abortControllers.delete(uniqueId);
       cancelledRequests.delete(uniqueId);
@@ -779,7 +784,7 @@ async function makeApiCall(inputData, uniqueId, customUserPrompt = null, command
     clearTimeout(timeoutId);
     abortControllers.delete(uniqueId);
     responseAccumulators.delete(uniqueId);
-    console.error('[API] call error:', err);
+    console.log('[API] call error:', err);
 
     let errorMessage = 'API request failed';
     if (err.name === 'AbortError') {
@@ -866,7 +871,7 @@ async function handleApiError(uniqueId, message) {
         placeholderKey: 'placeholderFollowUp'
       });
     } catch (e) {
-      console.error('[API] Failed to send error message to tab:', e);
+      console.log('[API] Failed to send error message to tab:', e);
     }
   }
   cancelledRequests.delete(uniqueId);

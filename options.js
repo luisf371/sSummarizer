@@ -329,7 +329,6 @@ If and ONLY if timestamps are provided;
           const savedProvider = (result.apiProvider || 'openai').toLowerCase();
           apiProviderSelect.value = PROVIDER_PRESETS[savedProvider] ? savedProvider : 'openai';
         }
-        apiUrlInput.value = result.apiUrl || '';
         modelInput.value = result.model || '';
         systemPromptInput.value = result.systemPrompt || '';
         timestampPromptInput.value = result.timestampPrompt || DEFAULT_TIMESTAMP_PROMPT;
@@ -342,12 +341,14 @@ If and ONLY if timestamps are provided;
         if (redditSortInput) redditSortInput.value = result.redditSort || 'current';
         if (enableContextMenuInput) enableContextMenuInput.checked = result.enableContextMenu ?? true;
         if (enableDebugModeInput) enableDebugModeInput.checked = result.enableDebugMode || false;
+
+        apiUrlInput.value = (result.apiUrl || '').trim();
         applyProviderPreset({ shouldResetUrl: !result.apiUrl });
         systemPromptInput.dispatchEvent(new Event('input', { bubbles: true }));
         toggleTimestampPromptVisibility();
       });
     } catch (error) {
-      console.error('[Options] Error loading settings:', error);
+      console.log('[Options] Error loading settings:', error);
       showStatus('Failed to load saved settings', 'error');
     }
   }
@@ -450,9 +451,9 @@ If and ONLY if timestamps are provided;
 
         const parsedUrl = new URL(url);
 
-        if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+        if (parsedUrl.protocol !== 'https:') {
 
-          setFieldError(urlInput, 'URL must use HTTP or HTTPS protocol');
+          setFieldError(urlInput, 'URL must use HTTPS protocol');
 
           return false;
 
@@ -914,7 +915,7 @@ If and ONLY if timestamps are provided;
     
     chrome.storage.local.set({ slashCommands: validCommands }, () => {
       if (chrome.runtime.lastError) {
-        console.error('[Options] Error saving slash commands:', chrome.runtime.lastError);
+        console.log('[Options] Error saving slash commands:', chrome.runtime.lastError);
       }
     });
   }
