@@ -14,7 +14,6 @@
   let floatingWindows = new Map(); // Stores ShadowRoot
   let isMinimized = new Map();
   let textSizes = new Map();
-  let windowPositions = new Map();
   let windowSizes = new Map();
   let contentBuffers = new Map();
   let userScrolledUp = new Map();
@@ -58,6 +57,10 @@
         break;
       case 'streamEnd':
         handleStreamEnd(request);
+        sendResponse({ success: true });
+        break;
+      case 'chatUnlock':
+        setChatEnabled(request.uniqueId, true, request.placeholderKey || 'placeholderFollowUp');
         sendResponse({ success: true });
         break;
     }
@@ -136,7 +139,7 @@
         </div>
         <div id="content-wrapper-${uniqueId}" style="flex-grow: 1; position: relative; overflow: hidden;">
           <div id="content-${uniqueId}" style="height: 100%; overflow-y: auto; padding: 16px; font-size: ${initialFontSize}px; background-color: #1e1e1e; color: #cfcfcf; line-height: 1.5; word-wrap: break-word;">
-            <div id="loading-overlay-${uniqueId}" style="display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.7); display: flex; justify-content: center; align-items: center; border-radius: 0 0 8px 8px; z-index: 10;">
+            <div id="loading-overlay-${uniqueId}" style="display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.7); justify-content: center; align-items: center; border-radius: 0 0 8px 8px; z-index: 10;">
               <div class="spinner" style="border: 3px solid rgba(255,255,255,0.1); border-left-color: #4a9eff; border-radius: 50%; width: 32px; height: 32px; animation: spin 1s linear infinite;"></div>
             </div>
           </div>
@@ -355,7 +358,6 @@
       floatingWindows.set(uniqueId, shadow);
       isMinimized.set(uniqueId, false);
       textSizes.set(uniqueId, initialFontSize);
-      windowPositions.set(uniqueId, position);
       userScrolledUp.set(uniqueId, false);
       isContentUpdating.set(uniqueId, false);
       isChatProcessing.set(uniqueId, false);
@@ -550,11 +552,12 @@
     floatingWindows.delete(uniqueId);
     isMinimized.delete(uniqueId);
     textSizes.delete(uniqueId);
-    windowPositions.delete(uniqueId);
     windowSizes.delete(uniqueId);
     contentBuffers.delete(uniqueId);
     userScrolledUp.delete(uniqueId);
     isContentUpdating.delete(uniqueId);
+    chatHistories.delete(uniqueId);
+    isChatProcessing.delete(uniqueId);
     slashCommandsCache.delete(uniqueId);
     selectedSlashCommand.delete(uniqueId);
     dropdownSelectedIndex.delete(uniqueId);
@@ -1040,18 +1043,27 @@
           contentElement.scrollTop = contentElement.scrollHeight;
         });
       }
-
-      // Enable chat input
-      const input = win.querySelector(`#chat-input-${uniqueId}`);
-      const btn = win.querySelector(`#chat-send-${uniqueId}`);
-      if (input) {
-        input.disabled = false;
-        input.placeholder = chrome.i18n.getMessage('placeholderFollowUp') || "Ask a follow-up...";
-      }
-      if (btn) btn.disabled = false;
     }
+    setChatEnabled(uniqueId, true, 'placeholderFollowUp');
+  }
 
-    isChatProcessing.set(uniqueId, false);
+  function setChatEnabled(uniqueId, enabled, placeholderKey = 'placeholderFollowUp') {
+    const win = floatingWindows.get(uniqueId);
+    if (!win) return;
+
+    const input = win.querySelector(`#chat-input-${uniqueId}`);
+    const btn = win.querySelector(`#chat-send-${uniqueId}`);
+
+    if (input) {
+      input.disabled = !enabled;
+      if (enabled) {
+        input.placeholder = chrome.i18n.getMessage(placeholderKey) || "Ask a follow-up...";
+      } else {
+        input.placeholder = chrome.i18n.getMessage('placeholderThinking') || "Thinking...";
+      }
+    }
+    if (btn) btn.disabled = !enabled;
+    isChatProcessing.set(uniqueId, !enabled);
   }
 
   function setupChatListeners(uniqueId, win) {
@@ -1290,19 +1302,9 @@
   }
 
   function sendFollowUp(uniqueId, question) {
-    isChatProcessing.set(uniqueId, true);
-
-    // Disable input
+    setChatEnabled(uniqueId, false, 'placeholderThinking');
     const win = floatingWindows.get(uniqueId); // ShadowRoot
     if (win) {
-      const input = win.querySelector(`#chat-input-${uniqueId}`);
-      const btn = win.querySelector(`#chat-send-${uniqueId}`);
-      if (input) {
-        input.disabled = true;
-        input.placeholder = chrome.i18n.getMessage('placeholderThinking') || "Thinking...";
-      }
-      if (btn) btn.disabled = true;
-
       // Format question - show /command for slash commands, otherwise text
       const selected = selectedSlashCommand.get(uniqueId);
       const displayQuestion = selected ? `/${selected.command}` : (question.startsWith('/') ? question.split('\n')[0] : question);
@@ -1327,7 +1329,7 @@
     }, (response) => {
       if (chrome.runtime.lastError) {
         console.error('Error sending follow-up:', chrome.runtime.lastError.message);
-        isChatProcessing.set(uniqueId, false);
+        setChatEnabled(uniqueId, true, 'placeholderFollowUp');
       }
     });
   }

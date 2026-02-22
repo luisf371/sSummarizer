@@ -91,6 +91,14 @@
     "message": "选择一个预设以自动填充推荐的端点。兼容OpenAI的预设会自动添加/completions。选择自定义以使用不同的路径。",
     "description": "Provider help text"
   },
+  "labelCustomFormat": {
+    "message": "自定义格式",
+    "description": "Custom provider format label"
+  },
+  "cardContextMenu": {
+    "message": "右键菜单",
+    "description": "Context menu card title"
+  },
   "labelApiUrl": {
     "message": "兼容OpenAI的API URL",
     "description": "API URL label"

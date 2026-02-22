@@ -24,8 +24,6 @@ let responseAccumulators = new Map();
 const CONFIG = {
   MAX_TEXT_LENGTH: 100000, // Maximum text length to send to API
   REQUEST_TIMEOUT: 30000, // 30 seconds timeout for API requests
-  RETRY_ATTEMPTS: 3,
-  YOUTUBE_TRANSCRIPT_TIMEOUT: 10000,
   CONTEXT_MENU_ID: "summarize-selection"
 };
 
@@ -109,6 +107,47 @@ const AnthropicAdapter = {
   }
 };
 
+const AzureAdapter = {
+  buildHeaders(apiKey) {
+    return {
+      'Content-Type': 'application/json',
+      'api-key': apiKey.trim()
+    };
+  },
+
+  transformRequest(messages, model, systemPrompt) {
+    const formattedMessages = [];
+    if (systemPrompt) {
+      formattedMessages.push({ role: 'system', content: systemPrompt });
+    }
+    formattedMessages.push(...messages);
+
+    const request = {
+      messages: formattedMessages,
+      stream: true
+    };
+
+    if (model?.trim()) {
+      request.model = model.trim();
+    }
+    return request;
+  },
+
+  parseStreamChunk(jsonData) {
+    if (jsonData.choices?.[0]?.delta?.content) {
+      return jsonData.choices[0].delta.content;
+    }
+    if (jsonData.choices?.[0]?.message?.content && !jsonData.choices?.[0]?.delta) {
+      return jsonData.choices[0].message.content;
+    }
+    return null;
+  },
+
+  isStreamEnd(data) {
+    return data === '[DONE]' || data?.choices?.[0]?.finish_reason === 'stop';
+  }
+};
+
 const GeminiAdapter = {
   buildHeaders(apiKey) {
     // Gemini uses x-goog-api-key header (URL param handled separately in makeApiCall)
@@ -158,6 +197,7 @@ function getAdapter(provider, customFormat = null) {
   if (customFormat) {
     // For custom providers, caller should pass the format string
     // Return OpenAI as default for OpenAI-compatible APIs
+    if (customFormat === 'azure') return AzureAdapter;
     if (customFormat === 'anthropic') return AnthropicAdapter;
     if (customFormat === 'gemini') return GeminiAdapter;
     return OpenAIAdapter; // Default for openai-compatible
@@ -168,6 +208,10 @@ function getAdapter(provider, customFormat = null) {
 
   if (providerLower.includes('anthropic') || providerLower.includes('claude')) {
     return AnthropicAdapter;
+  }
+
+  if (providerLower.includes('azure')) {
+    return AzureAdapter;
   }
 
   if (providerLower.includes('gemini') || providerLower.includes('google')) {
@@ -488,14 +532,16 @@ async function sendMessageSafely(tabId, message) {
   });
 }
 
-/**
- * Format seconds to MM:SS format
- */
-function formatTime(seconds) {
-  if (typeof seconds !== 'number' || isNaN(seconds)) return '00:00';
-  const m = Math.floor(seconds / 60);
-  const s = Math.floor(seconds % 60);
-  return `${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}`;
+async function ensureHostPermission(url) {
+  try {
+    const parsed = new URL(url);
+    const originPattern = `${parsed.protocol}//${parsed.host}/*`;
+    const hasPermission = await chrome.permissions.contains({ origins: [originPattern] });
+    return hasPermission;
+  } catch (error) {
+    console.warn('[Background] Could not evaluate host permission for URL:', url, error);
+    return false;
+  }
 }
 
 /**
@@ -522,6 +568,8 @@ async function makeApiCall(inputData, uniqueId, customUserPrompt = null, command
   // Check if the request was explicitly cancelled
   if (cancelledRequests.has(uniqueId)) {
     console.log(`[API] Request ${uniqueId} was cancelled, skipping API call`);
+    cancelledRequests.delete(uniqueId);
+    responseAccumulators.delete(uniqueId);
     return;
   }
 
@@ -529,6 +577,8 @@ async function makeApiCall(inputData, uniqueId, customUserPrompt = null, command
   const tabId = tabIdMap.get(uniqueId);
   if (!tabId) {
     console.log(`[API] Request ${uniqueId} was already closed/cancelled, skipping API call`);
+    cancelledRequests.delete(uniqueId);
+    responseAccumulators.delete(uniqueId);
     return;
   }
 
@@ -581,6 +631,12 @@ async function makeApiCall(inputData, uniqueId, customUserPrompt = null, command
           uniqueId,
           fullResponse: "[Debug Mode: No API Call Made]",
           originalContext: inputData
+        });
+      } else {
+        await sendMessageSafely(tab, {
+          action: 'chatUnlock',
+          uniqueId,
+          placeholderKey: 'placeholderFollowUp'
         });
       }
     }
@@ -691,10 +747,19 @@ async function makeApiCall(inputData, uniqueId, customUserPrompt = null, command
     console.log('[API] ===== END API REQUEST DEBUG =====');
 
     let fetchUrl = apiUrl;
-    const isGemini = adapter === GeminiAdapter;
-    if (isGemini) {
+    const shouldForceGeminiUrl = apiProvider === 'gemini';
+    if (shouldForceGeminiUrl) {
       const geminiModel = model?.trim() || 'gemini-pro';
       fetchUrl = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:streamGenerateContent?key=${apiKey.trim()}`;
+    }
+
+    const hasHostPermission = await ensureHostPermission(fetchUrl);
+    if (!hasHostPermission) {
+      await handleApiError(
+        uniqueId,
+        'Host permission for this API endpoint is missing. Open Options and Save/Test your endpoint to grant access.'
+      );
+      return;
     }
 
     console.log('[API] Making API Request (streaming mode)');
@@ -783,8 +848,8 @@ async function makeApiCall(inputData, uniqueId, customUserPrompt = null, command
           await sendMessageSafely(tab, { action: 'hideLoading', uniqueId });
           abortControllers.delete(uniqueId);
           cancelledRequests.delete(uniqueId);
+          responseAccumulators.delete(uniqueId);
           // tabIdMap.delete(uniqueId); // Keep mapping for follow-ups
-          // responseAccumulators.delete(uniqueId); // Keep accumulator or reset? Better to keep until next request overrides it or window close
           break;
         }
         buffer += decoder.decode(value, { stream: true });
@@ -798,6 +863,7 @@ async function makeApiCall(inputData, uniqueId, customUserPrompt = null, command
       }
       abortControllers.delete(uniqueId);
       cancelledRequests.delete(uniqueId);
+      responseAccumulators.delete(uniqueId);
       // Only clean up if it's a real error that breaks the session? 
       // If stream just fails, user might retry. 
       // But for now let's keep error behavior as is, but consider removing tabIdMap delete if we want to allow retry.
@@ -809,7 +875,7 @@ async function makeApiCall(inputData, uniqueId, customUserPrompt = null, command
   } catch (err) {
     clearTimeout(timeoutId);
     abortControllers.delete(uniqueId);
-    // responseAccumulators.delete(uniqueId); // Keep for inspection?
+    responseAccumulators.delete(uniqueId);
     console.error('[API] call error:', err);
 
     let errorMessage = 'API request failed';
@@ -867,11 +933,13 @@ function stopApiRequest(uniqueId) {
     }
 
     tabIdMap.delete(uniqueId);
+    responseAccumulators.delete(uniqueId);
   } else {
     console.log(`[API] Request ${uniqueId} marked as cancelled (may not have started yet)`);
 
     // Still try to clean up tab mapping
     tabIdMap.delete(uniqueId);
+    responseAccumulators.delete(uniqueId);
   }
 }
 
@@ -895,11 +963,17 @@ async function handleApiError(uniqueId, message) {
         content: `[Error] ${message}`,
         uniqueId
       });
+      await sendMessageSafely(tab, {
+        action: 'chatUnlock',
+        uniqueId,
+        placeholderKey: 'placeholderFollowUp'
+      });
     } catch (e) {
       console.error('[API] Failed to send error message to tab:', e);
     }
   }
   cancelledRequests.delete(uniqueId);
+  responseAccumulators.delete(uniqueId);
   // tabIdMap.delete(uniqueId); // Keep session open for retries
 }
 

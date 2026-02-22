@@ -91,6 +91,14 @@
     "message": "Sélectionnez un préréglage pour remplir automatiquement le point de terminaison recommandé. Les préréglages compatibles OpenAI ajoutent automatiquement /completions. Choisissez Personnalisé pour utiliser des chemins différents.",
     "description": "Provider help text"
   },
+  "labelCustomFormat": {
+    "message": "Format personnalisé",
+    "description": "Custom provider format label"
+  },
+  "cardContextMenu": {
+    "message": "Menu contextuel",
+    "description": "Context menu card title"
+  },
   "labelApiUrl": {
     "message": "URL API compatible OpenAI",
     "description": "API URL label"

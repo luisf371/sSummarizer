@@ -91,6 +91,14 @@
     "message": "プリセットを選択すると推奨エンドポイントが自動入力されます。OpenAI互換プリセットは自動的に/completionsを追加します。別のパスを使用する場合はカスタムを選択してください。",
     "description": "Provider help text"
   },
+  "labelCustomFormat": {
+    "message": "カスタム形式",
+    "description": "Custom provider format label"
+  },
+  "cardContextMenu": {
+    "message": "コンテキストメニュー",
+    "description": "Context menu card title"
+  },
   "labelApiUrl": {
     "message": "OpenAI互換API URL",
     "description": "API URL label"

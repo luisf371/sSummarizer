@@ -91,6 +91,14 @@
     "message": "Select a preset to auto-fill the recommended endpoint. OpenAI-compatible presets automatically append /completions. Choose Custom to supply different paths.",
     "description": "Provider help text"
   },
+  "labelCustomFormat": {
+    "message": "Custom Format",
+    "description": "Custom provider format label"
+  },
+  "cardContextMenu": {
+    "message": "Context Menu",
+    "description": "Context menu card title"
+  },
   "labelApiUrl": {
     "message": "OpenAI-Compatible API URL",
     "description": "API URL label"

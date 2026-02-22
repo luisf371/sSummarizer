@@ -159,7 +159,7 @@ document.addEventListener('DOMContentLoaded', function() {
       label: 'Custom / Other',
       url: '',
       placeholder: 'https://your-endpoint.example.com/v1/chat',
-      enforceSuffix: '/completions',
+      enforceSuffix: '',
       modelHint: 'gpt-4o-mini'
     },
     openrouter: {
@@ -170,6 +170,136 @@ document.addEventListener('DOMContentLoaded', function() {
       modelHint: 'openrouter/auto'
     }
   };
+
+  function getProviderRequestKind(apiProvider, customFormat) {
+    const provider = (apiProvider || 'openai').toLowerCase();
+    if (provider === 'custom') {
+      return (customFormat || 'openai').toLowerCase();
+    }
+    return provider;
+  }
+
+  function getEnforceSuffixForSelection(apiProvider, customFormat) {
+    const providerKind = getProviderRequestKind(apiProvider, customFormat);
+    const completionSuffixProviders = new Set(['openai', 'groq', 'perplexity', 'openrouter']);
+    return completionSuffixProviders.has(providerKind) ? '/completions' : '';
+  }
+
+  function buildOriginPattern(apiUrl) {
+    const parsed = new URL(apiUrl);
+    return `${parsed.protocol}//${parsed.host}/*`;
+  }
+
+  async function ensureHostPermissionForApiUrl(apiUrl, { interactive = false, contextLabel = 'this endpoint' } = {}) {
+    try {
+      const parsed = new URL(apiUrl);
+      const isLocalHttp =
+        parsed.protocol === 'http:' &&
+        (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1');
+
+      if (parsed.protocol !== 'https:' && !isLocalHttp) {
+        showStatus('Only HTTPS endpoints are supported (except localhost/127.0.0.1 for local testing).', 'error');
+        return false;
+      }
+
+      const originPattern = buildOriginPattern(apiUrl);
+      const contains = await new Promise(resolve =>
+        chrome.permissions.contains({ origins: [originPattern] }, resolve)
+      );
+
+      if (contains) {
+        return true;
+      }
+
+      if (!interactive) {
+        return false;
+      }
+
+      const granted = await new Promise(resolve =>
+        chrome.permissions.request({ origins: [originPattern] }, resolve)
+      );
+
+      if (!granted) {
+        showStatus(`Permission denied for ${parsed.origin}. ${contextLabel} cannot continue.`, 'error');
+      }
+      return granted;
+    } catch (error) {
+      showStatus(`Unable to request endpoint permission: ${error.message}`, 'error');
+      return false;
+    }
+  }
+
+  function buildTestConnectionRequest({ apiProvider, customFormat, apiUrl, apiKey, model }) {
+    const providerKind = getProviderRequestKind(apiProvider, customFormat);
+    const provider = (apiProvider || '').toLowerCase();
+    const trimmedModel = model?.trim();
+    const userMessage = 'Reply with 1';
+
+    if (providerKind === 'anthropic') {
+      return {
+        fetchUrl: apiUrl,
+        fetchOptions: {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': apiKey,
+            'anthropic-version': '2023-06-01'
+          },
+          body: JSON.stringify({
+            model: trimmedModel || 'claude-3-5-sonnet-latest',
+            max_tokens: 20,
+            stream: false,
+            messages: [{ role: 'user', content: userMessage }]
+          })
+        }
+      };
+    }
+
+    if (providerKind === 'gemini') {
+      const fetchUrl = provider === 'gemini'
+        ? `https://generativelanguage.googleapis.com/v1beta/models/${trimmedModel || 'gemini-pro'}:generateContent?key=${encodeURIComponent(apiKey)}`
+        : apiUrl;
+
+      const headers = provider === 'gemini'
+        ? { 'Content-Type': 'application/json' }
+        : { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey };
+
+      return {
+        fetchUrl,
+        fetchOptions: {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            contents: [{ role: 'user', parts: [{ text: userMessage }] }]
+          })
+        }
+      };
+    }
+
+    const headers =
+      providerKind === 'azure'
+        ? { 'Content-Type': 'application/json', 'api-key': apiKey }
+        : { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` };
+
+    const body = {
+      max_tokens: 20,
+      stream: false,
+      messages: [{ role: 'user', content: userMessage }]
+    };
+
+    if (trimmedModel) {
+      body.model = trimmedModel;
+    }
+
+    return {
+      fetchUrl: apiUrl,
+      fetchOptions: {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body)
+      }
+    };
+  }
 
   const statusDiv = document.createElement('div');
   statusDiv.id = 'status-message';
@@ -322,6 +452,14 @@ If and ONLY if timestamps are provided;
     function setupProviderSelector() {
       if (!apiProviderSelect || !apiUrlInput) return;
       const customFormatContainer = document.getElementById('custom-format-container');
+      const customFormatSelect = document.getElementById('custom-format');
+
+      function syncEnforceSuffix() {
+        apiUrlInput.dataset.enforceSuffix = getEnforceSuffixForSelection(
+          apiProviderSelect?.value,
+          customFormatSelect?.value
+        );
+      }
       
       function toggleCustomFormatVisibility() {
         if (customFormatContainer) {
@@ -330,12 +468,20 @@ If and ONLY if timestamps are provided;
       }
       
       applyProviderPreset({ shouldResetUrl: !apiUrlInput.value });
+      syncEnforceSuffix();
       toggleCustomFormatVisibility();
       
       apiProviderSelect.addEventListener('change', () => {
         applyProviderPreset({ shouldResetUrl: true });
+        syncEnforceSuffix();
         toggleCustomFormatVisibility();
       });
+      if (customFormatSelect) {
+        customFormatSelect.addEventListener('change', () => {
+          syncEnforceSuffix();
+          enforceProviderSuffix();
+        });
+      }
       apiUrlInput.addEventListener('blur', enforceProviderSuffix);
     }
 
@@ -343,8 +489,9 @@ If and ONLY if timestamps are provided;
       if (!apiUrlInput) return;
       const key = apiProviderSelect?.value || 'custom';
       const config = PROVIDER_PRESETS[key] || PROVIDER_PRESETS.custom;
+      const customFormat = document.getElementById('custom-format')?.value || '';
       apiUrlInput.placeholder = config.placeholder || 'https://api.example.com/v1/chat';
-      apiUrlInput.dataset.enforceSuffix = config.enforceSuffix || '';
+      apiUrlInput.dataset.enforceSuffix = getEnforceSuffixForSelection(key, customFormat);
       apiUrlInput.disabled = key !== 'custom';
       if (shouldResetUrl || !apiUrlInput.value.trim()) {
         apiUrlInput.value = config.url || '';
@@ -503,7 +650,7 @@ If and ONLY if timestamps are provided;
 
   
 
-    function handleFormSubmit(event) {
+    async function handleFormSubmit(event) {
 
       event.preventDefault();
 
@@ -532,6 +679,16 @@ If and ONLY if timestamps are provided;
 
         return;
 
+      }
+
+      if (currentValues.apiProvider === 'custom') {
+        const granted = await ensureHostPermissionForApiUrl(currentValues.apiUrl, {
+          interactive: true,
+          contextLabel: 'Saving custom provider settings'
+        });
+        if (!granted) {
+          return;
+        }
       }
 
   
@@ -694,7 +851,13 @@ If and ONLY if timestamps are provided;
         return;
       }
       
-      const { apiUrl, apiKey, model } = getFormValues();
+      const currentValues = getFormValues();
+      const { apiUrl, apiKey, model, apiProvider, customFormat } = currentValues;
+
+      if (apiProvider === 'custom' && !customFormat) {
+        showStatus('Please select a Custom Format before testing', 'error');
+        return;
+      }
 
       if (!apiUrl || !apiKey || !model) {
         showStatus('API URL, API Key, and Model Name are required before testing', 'error');
@@ -710,16 +873,21 @@ If and ONLY if timestamps are provided;
       showStatus('Testing API connection...', 'info');
 
       try {
+        if (apiProvider === 'custom') {
+          const granted = await ensureHostPermissionForApiUrl(apiUrl, {
+            interactive: true,
+            contextLabel: 'Test Connection'
+          });
+          if (!granted) {
+            return;
+          }
+        }
+
+        const { fetchUrl, fetchOptions } = buildTestConnectionRequest(currentValues);
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 10000);
 
-        const response = await fetch(apiUrl, {
-          method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-          body: JSON.stringify({ model, max_tokens: 20, stream: false, messages: [
-            { role: 'user', content: 'Reply with 1' }]
-          }),
-          signal: controller.signal
-        });
+        const response = await fetch(fetchUrl, { ...fetchOptions, signal: controller.signal });
         clearTimeout(timeoutId);
 
         if (response.ok) {
@@ -728,7 +896,12 @@ If and ONLY if timestamps are provided;
           const errorText = await response.text();
           let errorMessage = `API Error (${response.status}): `;
           try {
-            errorMessage += JSON.parse(errorText).error?.message || 'Unknown error';
+            const parsed = JSON.parse(errorText);
+            errorMessage +=
+              parsed?.error?.message ||
+              parsed?.message ||
+              parsed?.error?.details ||
+              'Unknown error';
           } catch (e) {
             errorMessage += response.statusText || 'Unknown error';
           }

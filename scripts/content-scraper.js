@@ -442,8 +442,10 @@ async function extractRedditThread() {
     chrome.storage.sync.get({ redditMaxComments: 100, redditDepth: 3, redditSort: 'current' }, resolve)
   );
   
-  const maxComments = parseInt(redditMaxComments) || 100;
-  const depthLimit = parseInt(redditDepth) !== undefined ? parseInt(redditDepth) : 3; 
+  const parsedMaxComments = Number.parseInt(redditMaxComments, 10);
+  const parsedDepth = Number.parseInt(redditDepth, 10);
+  const maxComments = Number.isFinite(parsedMaxComments) ? parsedMaxComments : 100;
+  const depthLimit = Number.isFinite(parsedDepth) ? parsedDepth : 3;
   const sortType = redditSort || 'current';
 
   console.log('[Reddit Extractor] Settings:', { maxComments, depthLimit, sortType });
@@ -620,4 +622,3 @@ function extractLegacyCommentTree(commentNode, currentDepth, maxDepth) {
     
     return text;
 }
-
