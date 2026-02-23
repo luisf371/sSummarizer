@@ -727,6 +727,18 @@ async function makeApiCall(inputData, uniqueId, customUserPrompt = null, command
       uniqueId
     });
 
+    // Per-chunk read timeout: detect stalled streams that hang without closing
+    const STREAM_CHUNK_TIMEOUT = 30000; // 30s max wait between chunks
+
+    function readWithTimeout(reader, ms) {
+      return Promise.race([
+        reader.read(),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Stream stalled: no data received for ' + (ms / 1000) + 's')), ms)
+        )
+      ]);
+    }
+
     try {
       while (true) {
         // Check if request was aborted before reading next chunk
@@ -739,7 +751,7 @@ async function makeApiCall(inputData, uniqueId, customUserPrompt = null, command
           break;
         }
 
-        const { done, value } = await reader.read();
+        const { done, value } = await readWithTimeout(reader, STREAM_CHUNK_TIMEOUT);
         if (done) {
           if (buffer.length > 0) {
             processBuffer(buffer, uniqueId, adapter);
@@ -766,19 +778,35 @@ async function makeApiCall(inputData, uniqueId, customUserPrompt = null, command
       }
     } catch (error) {
       if (error.name === 'AbortError') {
+        // User-initiated cancel — silent
+      } else if (error.message?.includes('Stream stalled')) {
+        console.log('[API] Stream stalled mid-response:', error.message);
+        try { reader.cancel(); } catch (e) { /* already closed */ }
+
+        // Send partial content notice + unlock chat for retry
+        const fullSoFar = responseAccumulators.get(uniqueId) || '';
+        if (fullSoFar) {
+          await sendMessageSafely(tab, {
+            action: 'appendToFloatingWindow',
+            content: '\n\n---\n⚠ *Stream interrupted — the API stopped sending data mid-response. You can ask a follow-up to continue.*',
+            uniqueId
+          });
+          await sendMessageSafely(tab, {
+            action: 'streamEnd',
+            uniqueId,
+            fullResponse: fullSoFar,
+            originalContext
+          });
+        } else {
+          await handleApiError(uniqueId, 'Stream interrupted: the API stopped responding before sending any content. Please try again.');
+        }
       } else {
         console.log('[API] Stream reading error:', error);
+        await handleApiError(uniqueId, `Stream error: ${error.message}`);
       }
       abortControllers.delete(uniqueId);
       cancelledRequests.delete(uniqueId);
       responseAccumulators.delete(uniqueId);
-      // Only clean up if it's a real error that breaks the session? 
-      // If stream just fails, user might retry. 
-      // But for now let's keep error behavior as is, but consider removing tabIdMap delete if we want to allow retry.
-      // For safety, on error we probably kill the session or handleApiError does it.
-      // handleApiError does delete it.
-      // For AbortError (user stop), we might want to keep it open?
-      // But stopApiRequest deletes it.
     }
   } catch (err) {
     clearTimeout(timeoutId);
