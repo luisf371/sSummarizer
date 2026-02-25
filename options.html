@@ -78,6 +78,41 @@
                 >
                 <small class="help-text" data-i18n="helpApiUrl">The field above is auto-filled from the selected provider preset. OpenAI-style providers automatically append /completions.</small>
               </div>
+              <div id="azure-config-fields" hidden>
+                <div class="form-group">
+                  <label for="azure-resource" class="required">Azure Resource Name</label>
+                  <input
+                    type="text"
+                    id="azure-resource"
+                    name="azure-resource"
+                    placeholder="your-resource"
+                    autocomplete="off"
+                  >
+                  <small class="help-text">Enter the Azure OpenAI resource name only (without `https://` or `.openai.azure.com`).</small>
+                </div>
+                <div class="form-group">
+                  <label for="azure-deployment" class="required">Azure Deployment Name</label>
+                  <input
+                    type="text"
+                    id="azure-deployment"
+                    name="azure-deployment"
+                    placeholder="gpt-4o-mini"
+                    autocomplete="off"
+                  >
+                  <small class="help-text">The deployment name configured in your Azure OpenAI resource.</small>
+                </div>
+                <div class="form-group">
+                  <label for="azure-api-version">Azure API Version</label>
+                  <input
+                    type="text"
+                    id="azure-api-version"
+                    name="azure-api-version"
+                    placeholder="2024-02-15-preview"
+                    autocomplete="off"
+                  >
+                  <small class="help-text">Optional. Leave blank to use the extension default API version.</small>
+                </div>
+              </div>
               <div class="form-group">
                 <label for="model" class="required" data-i18n="labelModel">Model Name</label>
                 <input 
@@ -260,7 +295,10 @@
               </div>
 
               <div class="form-group">
-                <label for="reddit-depth" data-i18n="labelReplyDepth">Include Reply Depth</label>
+                <div class="label-group label-group-inline">
+                  <label for="reddit-depth" data-i18n="labelReplyDepth">Include Reply Depth</label>
+                  <small class="help-text inline-help">(<span aria-hidden="true" style="color: #facc15;">▲</span> Replies do not count toward Max Comments.)</small>
+                </div>
                 <input type="number" id="reddit-depth" name="reddit-depth" min="0" max="10" placeholder="3">
                 <small class="help-text" data-i18n="helpReplyDepth">Pick how deep the scraper should traverse replies (0 = top level only).</small>
               </div>

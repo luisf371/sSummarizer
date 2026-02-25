@@ -20,6 +20,10 @@
   let slashCommandsCache = new Map();
   let selectedSlashCommand = new Map();
   let dropdownSelectedIndex = new Map();
+  let streamHeartbeatPorts = new Map();
+  let streamHeartbeatTimers = new Map();
+  let activeStreams = new Set();
+  let contentRenderTimers = new Map();
 
   // Configuration constants
   const UI_CONFIG = {
@@ -32,6 +36,8 @@
     MIN_HEIGHT: 250,
     POSITION_OFFSET: 20 // Offset for multiple windows
   };
+  const STREAM_HEARTBEAT_INTERVAL_MS = 5000;
+  const STREAM_RENDER_BATCH_MS = 50;
 
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     switch (request.action) {
@@ -44,6 +50,7 @@
         sendResponse({ success: true });
         break;
       case 'showLoading':
+        startStreamSession(request.uniqueId);
         showLoading(request.uniqueId);
         sendResponse({ success: true });
         break;
@@ -52,10 +59,12 @@
         sendResponse({ success: true });
         break;
       case 'streamEnd':
+        stopStreamSession(request.uniqueId);
         handleStreamEnd(request);
         sendResponse({ success: true });
         break;
       case 'chatUnlock':
+        stopStreamSession(request.uniqueId);
         setChatEnabled(request.uniqueId, true, request.placeholderKey || 'placeholderFollowUp');
         sendResponse({ success: true });
         break;
@@ -513,6 +522,8 @@
    */
   function closeWindow(uniqueId) {
     try {
+      stopStreamSession(uniqueId);
+
       // Send stop request to background script to abort any ongoing API request
       chrome.runtime.sendMessage({
         action: 'stopApiRequest',
@@ -538,6 +549,12 @@
    * Clean up window state from all maps
    */
   function cleanupWindowState(uniqueId) {
+    stopStreamSession(uniqueId);
+    const renderTimer = contentRenderTimers.get(uniqueId);
+    if (renderTimer) {
+      clearTimeout(renderTimer);
+      contentRenderTimers.delete(uniqueId);
+    }
     floatingWindows.delete(uniqueId);
     isMinimized.delete(uniqueId);
     textSizes.delete(uniqueId);
@@ -694,43 +711,7 @@
       let currentBuffer = contentBuffers.get(uniqueId) || '';
       currentBuffer += content;
       contentBuffers.set(uniqueId, currentBuffer);
-
-      // Set flag to ignore scroll events during content update
-      isContentUpdating.set(uniqueId, true);
-
-      // Save scroll position before updating content (for users who scrolled up)
-      const savedScrollTop = contentElement.scrollTop;
-      const wasScrolledUp = userScrolledUp.get(uniqueId);
-
-      // Sanitize and render the entire buffer
-      contentElement.innerHTML = sanitizeContent(currentBuffer);
-
-      // Handle scroll based on user state
-      if (!wasScrolledUp) {
-        // Auto-scroll to bottom
-        requestAnimationFrame(() => {
-          contentElement.scrollTop = contentElement.scrollHeight;
-          // Reset flag after scroll is applied
-          isContentUpdating.set(uniqueId, false);
-        });
-      } else {
-        // Restore previous scroll position to prevent text drift
-        requestAnimationFrame(() => {
-          contentElement.scrollTop = savedScrollTop;
-          isContentUpdating.set(uniqueId, false);
-          // Update button visibility when user is scrolled up
-          updateScrollButtonVisibility(uniqueId);
-        });
-      }
-
-      // Apply current font size
-      const currentFontSize = textSizes.get(uniqueId) || UI_CONFIG.DEFAULT_FONT_SIZE;
-      contentElement.style.fontSize = `${currentFontSize}px`;
-
-      // Auto-restore if minimized
-      if (isMinimized.get(uniqueId)) {
-        toggleMinimize(uniqueId);
-      }
+      scheduleContentRender(uniqueId);
 
     } catch (error) {
       console.log('[Content] Error handling message:', error);
@@ -989,6 +970,7 @@
 
   function handleStreamEnd(request) {
     const { uniqueId, fullResponse, originalContext } = request;
+    flushContentRender(uniqueId);
 
     // Initialize history if not present
     if (!chatHistories.has(uniqueId)) {
@@ -1272,6 +1254,7 @@
   }
 
   function sendFollowUp(uniqueId, question) {
+    startStreamSession(uniqueId);
     setChatEnabled(uniqueId, false, 'placeholderThinking');
     const win = floatingWindows.get(uniqueId); // ShadowRoot
     if (win) {
@@ -1302,6 +1285,141 @@
         setChatEnabled(uniqueId, true, 'placeholderFollowUp');
       }
     });
+  }
+
+  function startStreamSession(uniqueId) {
+    activeStreams.add(uniqueId);
+    startHeartbeat(uniqueId);
+  }
+
+  function stopStreamSession(uniqueId) {
+    activeStreams.delete(uniqueId);
+    stopHeartbeat(uniqueId);
+  }
+
+  function startHeartbeat(uniqueId) {
+    if (streamHeartbeatPorts.has(uniqueId)) {
+      return;
+    }
+
+    try {
+      const port = chrome.runtime.connect({ name: 'sSummarizer-stream-heartbeat' });
+      streamHeartbeatPorts.set(uniqueId, port);
+
+      port.onMessage.addListener(() => {
+        // Ack is intentionally ignored; the message itself helps keep the worker active.
+      });
+
+      port.onDisconnect.addListener(() => {
+        streamHeartbeatPorts.delete(uniqueId);
+        const timerId = streamHeartbeatTimers.get(uniqueId);
+        if (timerId) {
+          clearInterval(timerId);
+          streamHeartbeatTimers.delete(uniqueId);
+        }
+
+        if (activeStreams.has(uniqueId)) {
+          recoverInterruptedStream(uniqueId);
+        }
+      });
+
+      const sendHeartbeat = () => {
+        const currentPort = streamHeartbeatPorts.get(uniqueId);
+        if (!currentPort) return;
+        try {
+          currentPort.postMessage({
+            type: 'heartbeat',
+            uniqueId,
+            ts: Date.now()
+          });
+        } catch (e) {
+        }
+      };
+
+      sendHeartbeat();
+      const timerId = setInterval(sendHeartbeat, STREAM_HEARTBEAT_INTERVAL_MS);
+      streamHeartbeatTimers.set(uniqueId, timerId);
+    } catch (error) {
+      console.log('[Content] Failed to start heartbeat:', error);
+    }
+  }
+
+  function stopHeartbeat(uniqueId) {
+    const timerId = streamHeartbeatTimers.get(uniqueId);
+    if (timerId) {
+      clearInterval(timerId);
+      streamHeartbeatTimers.delete(uniqueId);
+    }
+
+    const port = streamHeartbeatPorts.get(uniqueId);
+    if (port) {
+      streamHeartbeatPorts.delete(uniqueId);
+      try {
+        port.disconnect();
+      } catch (e) {
+      }
+    }
+  }
+
+  function recoverInterruptedStream(uniqueId) {
+    if (!activeStreams.has(uniqueId)) return;
+    activeStreams.delete(uniqueId);
+
+    const win = floatingWindows.get(uniqueId);
+    if (!win) return;
+
+    hideLoading(uniqueId);
+    handleMessage('\n\n---\n[Info] Stream interrupted (background worker restarted or disconnected). You can ask a follow-up to continue.', uniqueId);
+    setChatEnabled(uniqueId, true, 'placeholderFollowUp');
+  }
+
+  function scheduleContentRender(uniqueId) {
+    if (contentRenderTimers.has(uniqueId)) {
+      return;
+    }
+
+    const timerId = setTimeout(() => {
+      contentRenderTimers.delete(uniqueId);
+      requestAnimationFrame(() => flushContentRender(uniqueId));
+    }, STREAM_RENDER_BATCH_MS);
+
+    contentRenderTimers.set(uniqueId, timerId);
+  }
+
+  function flushContentRender(uniqueId) {
+    const win = floatingWindows.get(uniqueId);
+    if (!win) {
+      return;
+    }
+
+    const contentElement = win.querySelector(`#content-${uniqueId}`);
+    if (!contentElement) {
+      return;
+    }
+
+    const currentBuffer = contentBuffers.get(uniqueId) || '';
+
+    isContentUpdating.set(uniqueId, true);
+    const savedScrollTop = contentElement.scrollTop;
+    const wasScrolledUp = userScrolledUp.get(uniqueId);
+
+    contentElement.innerHTML = sanitizeContent(currentBuffer);
+
+    if (!wasScrolledUp) {
+      requestAnimationFrame(() => {
+        contentElement.scrollTop = contentElement.scrollHeight;
+        isContentUpdating.set(uniqueId, false);
+      });
+    } else {
+      requestAnimationFrame(() => {
+        contentElement.scrollTop = savedScrollTop;
+        isContentUpdating.set(uniqueId, false);
+        updateScrollButtonVisibility(uniqueId);
+      });
+    }
+
+    const currentFontSize = textSizes.get(uniqueId) || UI_CONFIG.DEFAULT_FONT_SIZE;
+    contentElement.style.fontSize = `${currentFontSize}px`;
   }
 
 })();

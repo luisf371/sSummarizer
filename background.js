@@ -17,6 +17,8 @@ let abortControllers = new Map();
 let cancelledRequests = new Set();
 // Accumulate full responses for history tracking
 let responseAccumulators = new Map();
+// Track heartbeat ports from content scripts while streams are active
+let heartbeatPorts = new Set();
 
 // Configuration constants
 const CONFIG = {
@@ -24,6 +26,74 @@ const CONFIG = {
   REQUEST_TIMEOUT: 30000, // 30 seconds timeout for API requests
   CONTEXT_MENU_ID: "summarize-selection"
 };
+
+const DEFAULT_AZURE_API_VERSION = '2024-02-15-preview';
+
+function normalizeAzureResourceName(resource) {
+  const raw = (resource || '').trim();
+  if (!raw) return '';
+  return raw
+    .replace(/^https?:\/\//i, '')
+    .replace(/\.openai\.azure\.com.*$/i, '')
+    .replace(/\/.*$/, '')
+    .trim();
+}
+
+function buildAzureApiUrl({ apiUrl, azureResource, azureDeployment, azureApiVersion }) {
+  const resource = normalizeAzureResourceName(azureResource);
+  const deployment = (azureDeployment || '').trim();
+  if (!resource || !deployment) {
+    return (apiUrl || '').trim();
+  }
+  const apiVersion = (azureApiVersion || '').trim() || DEFAULT_AZURE_API_VERSION;
+  return `https://${resource}.openai.azure.com/openai/deployments/${encodeURIComponent(deployment)}/chat/completions?api-version=${encodeURIComponent(apiVersion)}`;
+}
+
+async function sendUiRecoveryMessages(tabId, uniqueId, infoMessage = '[Info] Request stopped by user.') {
+  if (!tabId) return;
+  try {
+    await sendMessageSafely(tabId, { action: 'hideLoading', uniqueId });
+    if (infoMessage) {
+      await sendMessageSafely(tabId, {
+        action: 'appendToFloatingWindow',
+        content: infoMessage,
+        uniqueId
+      });
+    }
+    await sendMessageSafely(tabId, {
+      action: 'chatUnlock',
+      uniqueId,
+      placeholderKey: 'placeholderFollowUp'
+    });
+  } catch (error) {
+    console.log('[Background] UI recovery messaging failed:', error?.message || error);
+  }
+}
+
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name !== 'sSummarizer-stream-heartbeat') {
+    return;
+  }
+
+  heartbeatPorts.add(port);
+
+  port.onMessage.addListener((message) => {
+    if (message?.type === 'heartbeat') {
+      try {
+        port.postMessage({
+          type: 'heartbeatAck',
+          uniqueId: message.uniqueId,
+          ts: Date.now()
+        });
+      } catch (e) {
+      }
+    }
+  });
+
+  port.onDisconnect.addListener(() => {
+    heartbeatPorts.delete(port);
+  });
+});
 
 // ===== PROVIDER ADAPTERS =====
 // Adapter objects for different API providers (OpenAI, Anthropic, Gemini)
@@ -148,7 +218,7 @@ const AzureAdapter = {
 
 const GeminiAdapter = {
   buildHeaders(apiKey) {
-    // Gemini uses x-goog-api-key header (URL param handled separately in makeApiCall)
+    // Gemini uses x-goog-api-key header authentication
     return {
       'Content-Type': 'application/json',
       'x-goog-api-key': apiKey.trim()
@@ -304,8 +374,10 @@ async function setupContextMenu() {
 // Add message listener for stopping API requests and handling follow-ups
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'stopApiRequest') {
-    stopApiRequest(request.uniqueId);
-    sendResponse({ success: true });
+    stopApiRequest(request.uniqueId, sender?.tab?.id).finally(() => {
+      sendResponse({ success: true });
+    });
+    return true;
   } else if (request.action === 'submitFollowUp') {
     // Re-establish tab mapping if lost (e.g. due to Service Worker restart)
     if (sender.tab && sender.tab.id) {
@@ -515,11 +587,26 @@ async function makeApiCall(inputData, uniqueId, customUserPrompt = null, command
     return;
   }
 
-  const { apiUrl, model, systemPrompt, timestampPrompt, apiKey, enableDebugMode, includeTimestamps, apiProvider } = await chrome.storage.local.get(
-    ['apiUrl', 'model', 'systemPrompt', 'timestampPrompt', 'apiKey', 'enableDebugMode', 'includeTimestamps', 'apiProvider']
+  const {
+    apiUrl,
+    model,
+    systemPrompt,
+    timestampPrompt,
+    apiKey,
+    enableDebugMode,
+    includeTimestamps,
+    apiProvider,
+    azureResource,
+    azureDeployment,
+    azureApiVersion
+  } = await chrome.storage.local.get(
+    ['apiUrl', 'model', 'systemPrompt', 'timestampPrompt', 'apiKey', 'enableDebugMode', 'includeTimestamps', 'apiProvider', 'azureResource', 'azureDeployment', 'azureApiVersion']
   );
 
   const adapter = getAdapter(apiProvider);
+  const resolvedApiUrl = apiProvider === 'azure'
+    ? buildAzureApiUrl({ apiUrl, azureResource, azureDeployment, azureApiVersion })
+    : (apiUrl || '').trim();
 
   // Universal Debug Mode Check - intercept BEFORE any processing/truncation
   if (enableDebugMode) {
@@ -550,11 +637,11 @@ async function makeApiCall(inputData, uniqueId, customUserPrompt = null, command
 
       const label = commandName ? `/${commandName}` : (customUserPrompt ? 'Custom Prompt' : 'Default Summary');
 
-      await sendMessageSafely(tab, {
-        action: 'appendToFloatingWindow',
-        content: `**[DEBUG MODE]**\n\n**Action:** ${label}\n**Model:** ${model}\n**Target URL:** ${apiUrl}\n**System Prompt:**\n${effectiveSystemPrompt}\n\n**Content Payload (${payloadContent.length} chars):**\n\n${payloadContent}\n`,
-        uniqueId
-      });
+        await sendMessageSafely(tab, {
+          action: 'appendToFloatingWindow',
+          content: `**[DEBUG MODE]**\n\n**Action:** ${label}\n**Model:** ${model}\n**Target URL:** ${resolvedApiUrl}\n**System Prompt:**\n${effectiveSystemPrompt}\n\n**Content Payload (${payloadContent.length} chars):**\n\n${payloadContent}\n`,
+          uniqueId
+        });
 
       // Unlock chat if it was an initial request
       if (typeof inputData === 'string') {
@@ -640,7 +727,7 @@ async function makeApiCall(inputData, uniqueId, customUserPrompt = null, command
   }
 
   // Validate configuration
-  if (!apiUrl || !apiKey) {
+  if (!resolvedApiUrl || !apiKey) {
     console.log('[API] API URL or API Key not set');
     await handleApiError(uniqueId, 'API URL or API Key not set. Please configure in extension options by right-clicking the extension icon.');
     return;
@@ -648,14 +735,14 @@ async function makeApiCall(inputData, uniqueId, customUserPrompt = null, command
 
   // Validate URL format and enforce HTTPS
   try {
-    const parsedUrl = new URL(apiUrl);
+    const parsedUrl = new URL(resolvedApiUrl);
     if (parsedUrl.protocol !== 'https:') {
-      console.log('[API] Non-HTTPS API URL rejected:', apiUrl);
+      console.log('[API] Non-HTTPS API URL rejected:', resolvedApiUrl);
       await handleApiError(uniqueId, 'API URL must use HTTPS. Please reconfigure in extension options.');
       return;
     }
   } catch (e) {
-    console.log('[API] Invalid API URL format:', apiUrl);
+    console.log('[API] Invalid API URL format:', resolvedApiUrl);
     await handleApiError(uniqueId, 'Invalid API URL format. Please check your configuration.');
     return;
   }
@@ -673,11 +760,11 @@ async function makeApiCall(inputData, uniqueId, customUserPrompt = null, command
     const requestBody = adapter.transformRequest(messages, model, effectiveSystemPrompt);
     requestBody.stream = true;
 
-    let fetchUrl = apiUrl;
+    let fetchUrl = resolvedApiUrl;
     const shouldForceGeminiUrl = apiProvider === 'gemini';
     if (shouldForceGeminiUrl) {
       const geminiModel = model?.trim() || 'gemini-pro';
-      fetchUrl = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:streamGenerateContent?key=${apiKey.trim()}`;
+      fetchUrl = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:streamGenerateContent`;
     }
 
     const response = await fetch(fetchUrl, {
@@ -731,12 +818,22 @@ async function makeApiCall(inputData, uniqueId, customUserPrompt = null, command
     const STREAM_CHUNK_TIMEOUT = 30000; // 30s max wait between chunks
 
     function readWithTimeout(reader, ms) {
-      return Promise.race([
-        reader.read(),
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Stream stalled: no data received for ' + (ms / 1000) + 's')), ms)
-        )
-      ]);
+      return new Promise((resolve, reject) => {
+        const timerId = setTimeout(() => {
+          reject(new Error('Stream stalled: no data received for ' + (ms / 1000) + 's'));
+        }, ms);
+
+        reader.read().then(
+          (result) => {
+            clearTimeout(timerId);
+            resolve(result);
+          },
+          (error) => {
+            clearTimeout(timerId);
+            reject(error);
+          }
+        );
+      });
     }
 
     try {
@@ -830,7 +927,7 @@ async function makeApiCall(inputData, uniqueId, customUserPrompt = null, command
 /**
  * Stop an ongoing API request
  */
-function stopApiRequest(uniqueId) {
+async function stopApiRequest(uniqueId, fallbackTabId = null) {
 
   // Mark request as cancelled to prevent future execution
   cancelledRequests.add(uniqueId);
@@ -854,20 +951,19 @@ function stopApiRequest(uniqueId) {
     abortControllers.delete(uniqueId);
 
     // Send notification to UI that request was stopped
-    const tab = tabIdMap.get(uniqueId);
+    const tab = tabIdMap.get(uniqueId) || fallbackTabId;
     if (tab) {
-      sendMessageSafely(tab, { action: 'hideLoading', uniqueId });
-      sendMessageSafely(tab, {
-        action: 'appendToFloatingWindow',
-        content: '[Info] Request stopped by user.',
-        uniqueId
-      });
+      await sendUiRecoveryMessages(tab, uniqueId, '[Info] Request stopped by user.');
     }
 
     tabIdMap.delete(uniqueId);
     responseAccumulators.delete(uniqueId);
   } else {
-    // Still try to clean up tab mapping
+    // Service worker may have restarted and lost in-memory state. Still recover the UI if possible.
+    const tab = tabIdMap.get(uniqueId) || fallbackTabId;
+    if (tab) {
+      await sendUiRecoveryMessages(tab, uniqueId, '[Info] Request was interrupted or already ended.');
+    }
     tabIdMap.delete(uniqueId);
     responseAccumulators.delete(uniqueId);
   }

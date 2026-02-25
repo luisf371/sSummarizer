@@ -94,6 +94,10 @@ document.addEventListener('DOMContentLoaded', function() {
   const apiKeyInput = document.getElementById('api-key');
   const apiUrlInput = document.getElementById('api-url');
   const apiProviderSelect = document.getElementById('api-provider');
+  const azureConfigFields = document.getElementById('azure-config-fields');
+  const azureResourceInput = document.getElementById('azure-resource');
+  const azureDeploymentInput = document.getElementById('azure-deployment');
+  const azureApiVersionInput = document.getElementById('azure-api-version');
   const modelInput = document.getElementById('model');
   const systemPromptInput = document.getElementById('system-prompt');
   const includeTimestampsInput = document.getElementById('include-timestamps');
@@ -163,6 +167,54 @@ document.addEventListener('DOMContentLoaded', function() {
       modelHint: 'openrouter/auto'
     }
   };
+  const DEFAULT_AZURE_API_VERSION = '2024-02-15-preview';
+
+  function normalizeAzureResourceName(resource) {
+    const raw = (resource || '').trim();
+    if (!raw) return '';
+    return raw
+      .replace(/^https?:\/\//i, '')
+      .replace(/\.openai\.azure\.com.*$/i, '')
+      .replace(/\/.*$/, '')
+      .trim();
+  }
+
+  function buildAzureApiUrl({ apiUrl, azureResource, azureDeployment, azureApiVersion }) {
+    const resource = normalizeAzureResourceName(azureResource);
+    const deployment = (azureDeployment || '').trim();
+    if (!resource || !deployment) {
+      return (apiUrl || '').trim();
+    }
+    const apiVersion = (azureApiVersion || '').trim() || DEFAULT_AZURE_API_VERSION;
+    return `https://${resource}.openai.azure.com/openai/deployments/${encodeURIComponent(deployment)}/chat/completions?api-version=${encodeURIComponent(apiVersion)}`;
+  }
+
+  function parseAzureApiUrl(apiUrl) {
+    try {
+      const parsed = new URL(apiUrl);
+      const hostMatch = parsed.hostname.match(/^([^.]+)\.openai\.azure\.com$/i);
+      const pathMatch = parsed.pathname.match(/\/openai\/deployments\/([^/]+)\/chat\/completions$/i);
+      if (!hostMatch || !pathMatch) return null;
+      return {
+        azureResource: hostMatch[1],
+        azureDeployment: decodeURIComponent(pathMatch[1] || ''),
+        azureApiVersion: parsed.searchParams.get('api-version') || DEFAULT_AZURE_API_VERSION
+      };
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function isAzureProviderSelected(provider = apiProviderSelect?.value) {
+    return (provider || '').toLowerCase() === 'azure';
+  }
+
+  function getResolvedApiUrl(values) {
+    if (isAzureProviderSelected(values?.apiProvider)) {
+      return buildAzureApiUrl(values);
+    }
+    return (values?.apiUrl || '').trim();
+  }
 
   function getEnforceSuffixForSelection(apiProvider) {
     const providerKind = (apiProvider || 'openai').toLowerCase();
@@ -170,15 +222,17 @@ document.addEventListener('DOMContentLoaded', function() {
     return completionSuffixProviders.has(providerKind) ? '/completions' : '';
   }
 
-  function buildTestConnectionRequest({ apiProvider, apiUrl, apiKey, model }) {
+  function buildTestConnectionRequest(values) {
+    const { apiProvider, apiUrl, apiKey, model } = values;
     const providerKind = (apiProvider || 'openai').toLowerCase();
     const provider = providerKind;
     const trimmedModel = model?.trim();
     const userMessage = 'Reply with 1';
+    const resolvedApiUrl = getResolvedApiUrl(values);
 
     if (providerKind === 'anthropic') {
       return {
-        fetchUrl: apiUrl,
+        fetchUrl: resolvedApiUrl,
         fetchOptions: {
           method: 'POST',
           headers: {
@@ -198,11 +252,11 @@ document.addEventListener('DOMContentLoaded', function() {
 
     if (providerKind === 'gemini') {
       const fetchUrl = provider === 'gemini'
-        ? `https://generativelanguage.googleapis.com/v1beta/models/${trimmedModel || 'gemini-pro'}:generateContent?key=${encodeURIComponent(apiKey)}`
-        : apiUrl;
+        ? `https://generativelanguage.googleapis.com/v1beta/models/${trimmedModel || 'gemini-pro'}:generateContent`
+        : resolvedApiUrl;
 
       const headers = provider === 'gemini'
-        ? { 'Content-Type': 'application/json' }
+        ? { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey }
         : { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey };
 
       return {
@@ -233,7 +287,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     return {
-      fetchUrl: apiUrl,
+      fetchUrl: resolvedApiUrl,
       fetchOptions: {
         method: 'POST',
         headers,
@@ -301,6 +355,9 @@ If and ONLY if timestamps are provided;
       apiKey: apiKeyInput.value.trim(),
       apiUrl: apiUrlInput.value.trim(),
       apiProvider: (apiProviderSelect?.value || 'openai'),
+      azureResource: normalizeAzureResourceName(azureResourceInput?.value || ''),
+      azureDeployment: (azureDeploymentInput?.value || '').trim(),
+      azureApiVersion: (azureApiVersionInput?.value || '').trim(),
       model: modelInput.value.trim(),
       systemPrompt: systemPromptInput.value.trim(),
       timestampPrompt: timestampPromptInput.value.trim(),
@@ -318,7 +375,7 @@ If and ONLY if timestamps are provided;
 
   function loadSavedOptions() {
     try {
-      chrome.storage.local.get(['apiKey', 'apiUrl', 'apiProvider', 'model', 'systemPrompt', 'timestampPrompt', 'includeTimestamps', 'defaultFontSize', 'subtitlePriority', 'preferredLanguage', 'redditMaxComments', 'redditDepth', 'redditSort', 'enableContextMenu', 'enableDebugMode'], function(result) {
+      chrome.storage.local.get(['apiKey', 'apiUrl', 'apiProvider', 'azureResource', 'azureDeployment', 'azureApiVersion', 'model', 'systemPrompt', 'timestampPrompt', 'includeTimestamps', 'defaultFontSize', 'subtitlePriority', 'preferredLanguage', 'redditMaxComments', 'redditDepth', 'redditSort', 'enableContextMenu', 'enableDebugMode'], function(result) {
         if (chrome.runtime.lastError) {
           showStatus('Error loading saved settings: ' + chrome.runtime.lastError.message, 'error');
           return;
@@ -331,7 +388,7 @@ If and ONLY if timestamps are provided;
         }
         modelInput.value = result.model || '';
         systemPromptInput.value = result.systemPrompt || '';
-        timestampPromptInput.value = result.timestampPrompt || DEFAULT_TIMESTAMP_PROMPT;
+        timestampPromptInput.value = result.timestampPrompt ?? DEFAULT_TIMESTAMP_PROMPT;
         includeTimestampsInput.checked = result.includeTimestamps ?? false;
         defaultFontSizeInput.value = result.defaultFontSize || 14;
         subtitlePriorityInput.value = result.subtitlePriority || 'auto';
@@ -341,8 +398,19 @@ If and ONLY if timestamps are provided;
         if (redditSortInput) redditSortInput.value = result.redditSort || 'current';
         if (enableContextMenuInput) enableContextMenuInput.checked = result.enableContextMenu ?? true;
         if (enableDebugModeInput) enableDebugModeInput.checked = result.enableDebugMode || false;
+        if (azureResourceInput) azureResourceInput.value = result.azureResource || '';
+        if (azureDeploymentInput) azureDeploymentInput.value = result.azureDeployment || '';
+        if (azureApiVersionInput) azureApiVersionInput.value = result.azureApiVersion || DEFAULT_AZURE_API_VERSION;
 
         apiUrlInput.value = (result.apiUrl || '').trim();
+        if (isAzureProviderSelected(apiProviderSelect?.value) && (!result.azureResource || !result.azureDeployment)) {
+          const parsedAzureUrl = parseAzureApiUrl(result.apiUrl || '');
+          if (parsedAzureUrl) {
+            if (azureResourceInput && !result.azureResource) azureResourceInput.value = parsedAzureUrl.azureResource;
+            if (azureDeploymentInput && !result.azureDeployment) azureDeploymentInput.value = parsedAzureUrl.azureDeployment;
+            if (azureApiVersionInput && !result.azureApiVersion) azureApiVersionInput.value = parsedAzureUrl.azureApiVersion;
+          }
+        }
         applyProviderPreset({ shouldResetUrl: !result.apiUrl });
         systemPromptInput.dispatchEvent(new Event('input', { bubbles: true }));
         toggleTimestampPromptVisibility();
@@ -399,6 +467,14 @@ If and ONLY if timestamps are provided;
         syncEnforceSuffix();
       });
       apiUrlInput.addEventListener('blur', enforceProviderSuffix);
+      [azureResourceInput, azureDeploymentInput, azureApiVersionInput].forEach((field) => {
+        if (!field) return;
+        field.addEventListener('input', () => {
+          syncAzurePreviewUrl();
+          resetFieldState(field);
+          resetFieldState(apiUrlInput);
+        });
+      });
     }
 
     function applyProviderPreset({ shouldResetUrl = false } = {}) {
@@ -412,13 +488,31 @@ If and ONLY if timestamps are provided;
       apiUrlInput.placeholder = config.placeholder || 'https://api.example.com/v1/chat';
       apiUrlInput.dataset.enforceSuffix = getEnforceSuffixForSelection(key);
       apiUrlInput.disabled = true;
+      toggleAzureFields(key);
       if (shouldResetUrl || !apiUrlInput.value.trim()) {
         apiUrlInput.value = config.url || '';
       }
+      syncAzurePreviewUrl();
       if (config.modelHint && modelInput && !modelInput.value) {
         modelInput.placeholder = config.modelHint;
       }
       enforceProviderSuffix();
+    }
+
+    function toggleAzureFields(providerKey) {
+      if (!azureConfigFields) return;
+      azureConfigFields.hidden = !isAzureProviderSelected(providerKey);
+    }
+
+    function syncAzurePreviewUrl() {
+      if (!apiUrlInput || !isAzureProviderSelected(apiProviderSelect?.value)) return;
+      const resolvedAzureUrl = buildAzureApiUrl({
+        apiUrl: PROVIDER_PRESETS.azure?.url || apiUrlInput.value,
+        azureResource: azureResourceInput?.value,
+        azureDeployment: azureDeploymentInput?.value,
+        azureApiVersion: azureApiVersionInput?.value
+      });
+      apiUrlInput.value = resolvedAzureUrl || (PROVIDER_PRESETS.azure?.url || '');
     }
 
     function enforceProviderSuffix() {
@@ -471,6 +565,41 @@ If and ONLY if timestamps are provided;
 
       }
 
+    }
+
+    function validateAzureConfig(values) {
+      if (!isAzureProviderSelected(values.apiProvider)) {
+        [azureResourceInput, azureDeploymentInput, azureApiVersionInput].forEach(field => field && resetFieldState(field));
+        return true;
+      }
+
+      let isValid = true;
+      const resource = normalizeAzureResourceName(values.azureResource);
+      const deployment = (values.azureDeployment || '').trim();
+
+      if (!resource) {
+        if (azureResourceInput) setFieldError(azureResourceInput, 'Azure resource name is required');
+        isValid = false;
+      } else if (azureResourceInput) {
+        setFieldSuccess(azureResourceInput);
+      }
+
+      if (!deployment) {
+        if (azureDeploymentInput) setFieldError(azureDeploymentInput, 'Azure deployment name is required');
+        isValid = false;
+      } else if (azureDeploymentInput) {
+        setFieldSuccess(azureDeploymentInput);
+      }
+
+      if (azureApiVersionInput) {
+        if ((values.azureApiVersion || '').trim()) {
+          setFieldSuccess(azureApiVersionInput);
+        } else {
+          resetFieldState(azureApiVersionInput);
+        }
+      }
+
+      return isValid;
     }
 
     function validateApiKey(key) {
@@ -558,6 +687,7 @@ If and ONLY if timestamps are provided;
       event.preventDefault();
 
       const currentValues = getFormValues();
+      currentValues.apiUrl = getResolvedApiUrl(currentValues);
 
       const isApiUrlValid = validateApiUrl(currentValues.apiUrl);
 
@@ -566,8 +696,9 @@ If and ONLY if timestamps are provided;
       const isModelValid = validateModel(currentValues.model);
 
       const isSystemPromptValid = validateSystemPrompt(currentValues.systemPrompt);
+      const isAzureConfigValid = validateAzureConfig(currentValues);
 
-      if (!isApiUrlValid || !isApiKeyValid || !isModelValid || !isSystemPromptValid) {
+      if (!isApiUrlValid || !isApiKeyValid || !isModelValid || !isSystemPromptValid || !isAzureConfigValid) {
 
         showStatus('Please fix the validation errors above', 'error');
 
@@ -586,10 +717,8 @@ If and ONLY if timestamps are provided;
       chrome.storage.local.set({
 
         ...currentValues,
-
-        systemPrompt: currentValues.systemPrompt || DEFAULT_SYSTEM_PROMPT,
-
-        timestampPrompt: currentValues.timestampPrompt || DEFAULT_TIMESTAMP_PROMPT
+        systemPrompt: currentValues.systemPrompt,
+        timestampPrompt: currentValues.timestampPrompt
 
       }, function() {
 
@@ -605,7 +734,7 @@ If and ONLY if timestamps are provided;
 
           showStatus('Settings saved successfully!', 'success');
 
-          [apiKeyInput, apiUrlInput, modelInput, systemPromptInput].forEach(resetFieldState);
+          [apiKeyInput, apiUrlInput, modelInput, systemPromptInput, azureResourceInput, azureDeploymentInput, azureApiVersionInput].filter(Boolean).forEach(resetFieldState);
 
         }
 
@@ -699,7 +828,7 @@ If and ONLY if timestamps are provided;
 
     function setupImmediateValidationReset() {
 
-      const fieldsToValidate = [apiKeyInput, apiUrlInput, modelInput, systemPromptInput];
+      const fieldsToValidate = [apiKeyInput, apiUrlInput, modelInput, systemPromptInput, azureResourceInput, azureDeploymentInput, azureApiVersionInput].filter(Boolean);
     
     fieldsToValidate.forEach(field => {
       // When the user starts typing, immediately remove any old error/success styles.
@@ -718,13 +847,14 @@ If and ONLY if timestamps are provided;
       }
       
       const currentValues = getFormValues();
+      currentValues.apiUrl = getResolvedApiUrl(currentValues);
       const { apiUrl, apiKey, model } = currentValues;
 
       if (!apiUrl || !apiKey || !model) {
         showStatus('API URL, API Key, and Model Name are required before testing', 'error');
         return;
       }
-      if (!validateApiUrl(apiUrl) || !validateApiKey(apiKey) || !validateModel(model)) {
+      if (!validateApiUrl(apiUrl) || !validateApiKey(apiKey) || !validateModel(model) || !validateAzureConfig(currentValues)) {
         showStatus('Please fix validation errors before testing', 'error');
         return;
       }

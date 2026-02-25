@@ -392,6 +392,15 @@ function getPageContent() {
 // REDDIT EXTRACTOR
 // ————————————————————————————————————————————————————————————————————————————————
 
+function getNormalizedNodeText(node) {
+  if (!node) return '';
+  return (node.textContent || '')
+    .replace(/\r/g, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/[ \t]+\n/g, '\n')
+    .trim();
+}
+
 /**
  * Extract content from a Reddit thread, supporting both 'Shreddit' (modern) and Legacy layouts.
  * Cleans noise (ads, timestamps, sidebars) and limits comment depth/count.
@@ -463,7 +472,7 @@ async function extractRedditThread() {
     // Fallback, but careful
     const fallbackBody = doc.querySelector('[data-click-id="text-body"]');
     
-    opBody = (shredditBody || legacyBody || fallbackBody)?.innerText?.trim() || '(No text content / Image or Link post)';
+    opBody = getNormalizedNodeText(shredditBody || legacyBody || fallbackBody) || '(No text content / Image or Link post)';
 
     // 3. Extract Comments
     let commentsText = [];
@@ -527,7 +536,7 @@ function extractCommentTree(commentNode, currentDepth, maxDepth) {
     const author = commentNode.getAttribute('author') || 'User';
     // Body is often in a slot="comment" or specific div
     const bodyNode = commentNode.querySelector('[slot="comment"]') || commentNode.querySelector('div[id^="-post-rtjson-content"]');
-    const body = bodyNode?.innerText?.trim();
+    const body = getNormalizedNodeText(bodyNode);
     
     if (!body) return null;
     
@@ -554,7 +563,7 @@ function extractCommentTree(commentNode, currentDepth, maxDepth) {
  */
 function extractLegacyCommentTree(commentNode, currentDepth, maxDepth) {
     const author = commentNode.querySelector('.author, [data-testid="comment_author"]')?.textContent?.trim() || 'User';
-    const body = commentNode.querySelector('.usertext-body, [data-testid="comment_body"]')?.innerText?.trim();
+    const body = getNormalizedNodeText(commentNode.querySelector('.usertext-body, [data-testid="comment_body"]'));
     
     if (!body) return null;
     

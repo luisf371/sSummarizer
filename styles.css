@@ -245,6 +245,12 @@ main {
   margin-bottom: 4px;
 }
 
+.label-group-inline {
+  justify-content: flex-start;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
 label {
   display: block;
   font-weight: 500;
