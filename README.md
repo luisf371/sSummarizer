@@ -1,7 +1,7 @@
-![Project Banner](./assets/banner.jpg)
+![Project Banner](./images/ss-banner.png)
 <!-- Main project branding banner -->
 
-![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg) ![Language: JavaScript](https://img.shields.io/badge/Language-JavaScript-F7DF1E.svg) ![Version: 1.0.3](https://img.shields.io/badge/Version-1.0.3-green.svg)
+![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg) ![Language: JavaScript](https://img.shields.io/badge/Language-JavaScript-F7DF1E.svg) ![Version: 1.4](https://img.shields.io/badge/Version-1.0.3-green.svg)
 
 🌍 **Supported Languages:** English, Spanish, French, Japanese, Portuguese (Brazil), Chinese (Simplified)
 
