@@ -83,6 +83,9 @@
     "message": "OpenRouter",
     "description": "OpenRouter option"
   },
+  "providerGlm": {
+    "message": "GLM (Coding Plan)"
+  },
   "helpProvider": {
     "message": "Selecciona un preset para autocompletar el endpoint recomendado. Los presets compatibles con OpenAI añaden automáticamente /completions.",
     "description": "Provider help text"
@@ -104,7 +107,7 @@
     "description": "Model label"
   },
   "helpModel": {
-    "message": "Elige el identificador exacto del modelo que procesará los resúmenes (ej., gpt-4o-mini, claude-3.5-sonnet).",
+    "message": "Elige el identificador exacto del modelo que procesará los resúmenes (ej., gpt5.2, claude-4.6-sonnet).",
     "description": "Model help text"
   },
   "labelApiKey": {

@@ -17,7 +17,7 @@ async function extractYouTubeCaptions() {
                 return transcriptData;
             }
         } else {
-            console.error('[YT Extractor] Could not extract video ID from URL.');
+            console.log('[YT Extractor] Could not extract video ID from URL.');
         }
 
         // Method 2: Try to access transcript panel
@@ -30,7 +30,7 @@ async function extractYouTubeCaptions() {
         return await fallbackToTitleDescription();
 
     } catch (error) {
-        console.error('[YT Extractor] Error in extractYouTubeCaptions:', error);
+        console.log('[YT Extractor] Error in extractYouTubeCaptions:', error);
         return await fallbackToTitleDescription();
     }
 }
@@ -170,7 +170,7 @@ async function getTranscriptViaInternalAPI(videoId) {
     return await parseYouTubeCaptionXML(xmlText);
     
   } catch (error) {
-    console.error('[YT Extractor] Error in getTranscriptViaInternalAPI:', error);
+    console.log('[YT Extractor] Error in getTranscriptViaInternalAPI:', error);
     return null;
   }
 }
@@ -208,7 +208,7 @@ async function parseYouTubeCaptionXML(xmlText) {
     // Check for parsing errors
     const parserError = xmlDoc.querySelector('parsererror');
     if (parserError) {
-      console.error('[YT Extractor] XML parsing error:', parserError.textContent);
+      console.log('[YT Extractor] XML parsing error:', parserError.textContent);
       return null;
     }
     
@@ -276,7 +276,7 @@ async function parseYouTubeCaptionXML(xmlText) {
     return fullTranscript;
     
   } catch (error) {
-    console.error('[YT Extractor] Error parsing caption XML:', error);
+    console.log('[YT Extractor] Error parsing caption XML:', error);
     return null;
   }
 }
@@ -314,7 +314,7 @@ async function extractFromTranscriptPanel() {
     return null;
     
   } catch (error) {
-    console.error('[YT Extractor] Error in extractFromTranscriptPanel:', error);
+    console.log('[YT Extractor] Error in extractFromTranscriptPanel:', error);
     return null;
   }
 }

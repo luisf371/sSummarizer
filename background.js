@@ -1,6 +1,8 @@
 // background.js - Chrome Extension Service Worker
 // Handles URL content extraction and API communication for summarization
 
+importScripts('shared/azure-utils.js');
+
 // Handle expected AbortErrors from cancelled API requests
 self.addEventListener('unhandledrejection', event => {
   if (event.reason && event.reason.name === 'AbortError') {
@@ -22,32 +24,15 @@ let heartbeatPorts = new Set();
 
 // Configuration constants
 const CONFIG = {
-  MAX_TEXT_LENGTH: 100000, // Maximum text length to send to API
   REQUEST_TIMEOUT: 30000, // 30 seconds timeout for API requests
   CONTEXT_MENU_ID: "summarize-selection"
 };
 
-const DEFAULT_AZURE_API_VERSION = '2024-02-15-preview';
+// DEFAULT_AZURE_API_VERSION, normalizeAzureResourceName, buildAzureApiUrl
+// are provided by shared/azure-utils.js (loaded via importScripts above).
 
-function normalizeAzureResourceName(resource) {
-  const raw = (resource || '').trim();
-  if (!raw) return '';
-  return raw
-    .replace(/^https?:\/\//i, '')
-    .replace(/\.openai\.azure\.com.*$/i, '')
-    .replace(/\/.*$/, '')
-    .trim();
-}
-
-function buildAzureApiUrl({ apiUrl, azureResource, azureDeployment, azureApiVersion }) {
-  const resource = normalizeAzureResourceName(azureResource);
-  const deployment = (azureDeployment || '').trim();
-  if (!resource || !deployment) {
-    return (apiUrl || '').trim();
-  }
-  const apiVersion = (azureApiVersion || '').trim() || DEFAULT_AZURE_API_VERSION;
-  return `https://${resource}.openai.azure.com/openai/deployments/${encodeURIComponent(deployment)}/chat/completions?api-version=${encodeURIComponent(apiVersion)}`;
-}
+const ZAI_CODING_BASE_URL = 'https://api.z.ai/api/coding/paas/v4';
+const ZAI_CODING_CHAT_COMPLETIONS_URL = ZAI_CODING_BASE_URL + '/chat/completions';
 
 async function sendUiRecoveryMessages(tabId, uniqueId, infoMessage = '[Info] Request stopped by user.') {
   if (!tabId) return;
@@ -115,7 +100,7 @@ const OpenAIAdapter = {
     }
     formattedMessages.push(...messages);
     return {
-      model: model?.trim() || 'gpt-3.5-turbo',
+      model: model?.trim() || 'gpt5.2',
       messages: formattedMessages,
       stream: true
     };
@@ -135,6 +120,43 @@ const OpenAIAdapter = {
 
   isStreamEnd(data) {
     // OpenAI uses [DONE] signal (handled in processBuffer) or finish_reason
+    return data === '[DONE]' || data?.choices?.[0]?.finish_reason === 'stop';
+  }
+};
+
+const GLMAdapter = {
+  buildHeaders(apiKey) {
+    return {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey.trim()}`
+    };
+  },
+
+  transformRequest(messages, model, systemPrompt) {
+    const formattedMessages = [];
+    if (systemPrompt) {
+      formattedMessages.push({ role: 'system', content: systemPrompt });
+    }
+    formattedMessages.push(...messages);
+    return {
+      model: model?.trim() || 'glm-5',
+      messages: formattedMessages,
+      stream: true,
+      thinking: { type: 'disabled' }
+    };
+  },
+
+  parseStreamChunk(jsonData) {
+    if (jsonData.choices?.[0]?.delta?.content) {
+      return jsonData.choices[0].delta.content;
+    }
+    if (jsonData.choices?.[0]?.message?.content && !jsonData.choices?.[0]?.delta) {
+      return jsonData.choices[0].message.content;
+    }
+    return null;
+  },
+
+  isStreamEnd(data) {
     return data === '[DONE]' || data?.choices?.[0]?.finish_reason === 'stop';
   }
 };
@@ -201,19 +223,9 @@ const AzureAdapter = {
     return request;
   },
 
-  parseStreamChunk(jsonData) {
-    if (jsonData.choices?.[0]?.delta?.content) {
-      return jsonData.choices[0].delta.content;
-    }
-    if (jsonData.choices?.[0]?.message?.content && !jsonData.choices?.[0]?.delta) {
-      return jsonData.choices[0].message.content;
-    }
-    return null;
-  },
-
-  isStreamEnd(data) {
-    return data === '[DONE]' || data?.choices?.[0]?.finish_reason === 'stop';
-  }
+  // Azure OpenAI uses the same SSE wire format as OpenAI — delegate shared parsing.
+  parseStreamChunk(jsonData) { return OpenAIAdapter.parseStreamChunk(jsonData); },
+  isStreamEnd(data) { return OpenAIAdapter.isStreamEnd(data); }
 };
 
 const GeminiAdapter = {
@@ -274,6 +286,10 @@ function getAdapter(provider) {
 
   if (providerLower.includes('gemini') || providerLower.includes('google')) {
     return GeminiAdapter;
+  }
+
+  if (providerLower.includes('glm')) {
+    return GLMAdapter;
   }
 
   // Default to OpenAI (works for OpenAI, Azure, Groq, and other OpenAI-compatible APIs)
@@ -551,23 +567,6 @@ async function sendMessageSafely(tabId, message) {
   });
 }
 
-/**
- * Truncate text to maximum length while preserving word boundaries
- */
-function truncateText(text, maxLength = CONFIG.MAX_TEXT_LENGTH) {
-  if (!text || text.length <= maxLength) return text;
-
-  const truncated = text.substring(0, maxLength);
-  const lastSpace = truncated.lastIndexOf(' ');
-
-  // If we can find a word boundary, use it
-  if (lastSpace > maxLength * 0.8) {
-    return truncated.substring(0, lastSpace) + '...';
-  }
-
-  return truncated + '...';
-}
-
 // Note: YouTube transcript fetching is now handled entirely by the content script
 // using the same approach as the Python youtube-transcript-api implementation
 
@@ -604,9 +603,16 @@ async function makeApiCall(inputData, uniqueId, customUserPrompt = null, command
   );
 
   const adapter = getAdapter(apiProvider);
-  const resolvedApiUrl = apiProvider === 'azure'
-    ? buildAzureApiUrl({ apiUrl, azureResource, azureDeployment, azureApiVersion })
-    : (apiUrl || '').trim();
+  const providerKind = (apiProvider || '').toLowerCase();
+  let resolvedApiUrl;
+
+  if (providerKind === 'azure') {
+    resolvedApiUrl = buildAzureApiUrl({ apiUrl, azureResource, azureDeployment, azureApiVersion });
+  } else if (providerKind === 'glm') {
+    resolvedApiUrl = ZAI_CODING_CHAT_COMPLETIONS_URL;
+  } else {
+    resolvedApiUrl = (apiUrl || '').trim();
+  }
 
   // Universal Debug Mode Check - intercept BEFORE any processing/truncation
   if (enableDebugMode) {
@@ -637,11 +643,11 @@ async function makeApiCall(inputData, uniqueId, customUserPrompt = null, command
 
       const label = commandName ? `/${commandName}` : (customUserPrompt ? 'Custom Prompt' : 'Default Summary');
 
-        await sendMessageSafely(tab, {
-          action: 'appendToFloatingWindow',
-          content: `**[DEBUG MODE]**\n\n**Action:** ${label}\n**Model:** ${model}\n**Target URL:** ${resolvedApiUrl}\n**System Prompt:**\n${effectiveSystemPrompt}\n\n**Content Payload (${payloadContent.length} chars):**\n\n${payloadContent}\n`,
-          uniqueId
-        });
+      await sendMessageSafely(tab, {
+        action: 'appendToFloatingWindow',
+        content: `**[DEBUG MODE]**\n\n**Action:** ${label}\n**Model:** ${model}\n**Target URL:** ${resolvedApiUrl}\n**System Prompt:**\n${effectiveSystemPrompt}\n\n**Content Payload (${payloadContent.length} chars):**\n\n${payloadContent}\n`,
+        uniqueId
+      });
 
       // Unlock chat if it was an initial request
       if (typeof inputData === 'string') {
@@ -667,22 +673,17 @@ async function makeApiCall(inputData, uniqueId, customUserPrompt = null, command
   let originalContext = null; // Only set for initial request
 
   let effectiveSystemPrompt = systemPrompt?.trim() || 'You are a helpful assistant that summarizes content concisely.';
-  if (includeTimestamps && timestampPrompt) {
-    effectiveSystemPrompt += '\n\n' + timestampPrompt.trim();
-  }
 
   if (typeof inputData === 'string') {
     // Initial Summary Request
     const text = inputData;
-    // Validate and truncate text if necessary
     if (!text) {
       console.log('[API] Invalid text input');
       await handleApiError(uniqueId, 'Invalid text content');
       return;
     }
 
-    const trimmedText = text.trim();
-    const processedText = truncateText(trimmedText);
+    const processedText = text.trim();
 
     // If this is a Quick Command, the custom prompt completely replaces the Default System Prompt
     if (customUserPrompt) {
@@ -692,10 +693,6 @@ async function makeApiCall(inputData, uniqueId, customUserPrompt = null, command
     // Retain the visual combination for the chat history, but the API gets them fully isolated
     const finalContent = customUserPrompt ? `${customUserPrompt}\n\n---\n\n${processedText}` : processedText;
     originalContext = finalContent;
-
-    if (processedText.length < trimmedText.length) {
-      // Warning intentionally suppressed in UI to avoid confusing users when long text is truncated.
-    }
 
     // If a custom user prompt (from a slash command) is provided, show it in the UI
     if (customUserPrompt) {
@@ -724,6 +721,11 @@ async function makeApiCall(inputData, uniqueId, customUserPrompt = null, command
   } else {
     console.log('[API] Invalid input data type');
     return;
+  }
+
+  // Append timestamp instructions AFTER any custom prompt override
+  if (includeTimestamps && timestampPrompt) {
+    effectiveSystemPrompt += '\n\n' + timestampPrompt.trim();
   }
 
   // Validate configuration
@@ -758,10 +760,9 @@ async function makeApiCall(inputData, uniqueId, customUserPrompt = null, command
 
   try {
     const requestBody = adapter.transformRequest(messages, model, effectiveSystemPrompt);
-    requestBody.stream = true;
 
     let fetchUrl = resolvedApiUrl;
-    const shouldForceGeminiUrl = apiProvider === 'gemini';
+    const shouldForceGeminiUrl = providerKind === 'gemini';
     if (shouldForceGeminiUrl) {
       const geminiModel = model?.trim() || 'gemini-pro';
       fetchUrl = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:streamGenerateContent`;
@@ -804,16 +805,6 @@ async function makeApiCall(inputData, uniqueId, customUserPrompt = null, command
       abortInfo.reader = reader;
     }
 
-    // Only send initial empty string if it's the very first request (string input)
-    // Actually, for follow-ups we also want to confirm stream start?
-    // Existing logic sends empty string to 'appendToFloatingWindow'. 
-    // For follow-ups, this is fine, it just ensures the window is ready.
-    await sendMessageSafely(tab, {
-      action: 'appendToFloatingWindow',
-      content: ``,
-      uniqueId
-    });
-
     // Per-chunk read timeout: detect stalled streams that hang without closing
     const STREAM_CHUNK_TIMEOUT = 30000; // 30s max wait between chunks
 
@@ -844,6 +835,7 @@ async function makeApiCall(inputData, uniqueId, customUserPrompt = null, command
           try {
             reader.cancel();
           } catch (e) {
+            // reader may already be closed — safe to ignore
           }
           break;
         }
@@ -867,7 +859,7 @@ async function makeApiCall(inputData, uniqueId, customUserPrompt = null, command
           abortControllers.delete(uniqueId);
           cancelledRequests.delete(uniqueId);
           responseAccumulators.delete(uniqueId);
-          // tabIdMap.delete(uniqueId); // Keep mapping for follow-ups
+          // tabIdMap entry intentionally kept — needed for follow-up requests.
           break;
         }
         buffer += decoder.decode(value, { stream: true });
@@ -945,6 +937,7 @@ async function stopApiRequest(uniqueId, fallbackTabId = null) {
       try {
         reader.cancel();
       } catch (e) {
+        // reader may already be closed — safe to ignore
       }
     }
 
@@ -1000,7 +993,7 @@ async function handleApiError(uniqueId, message) {
   }
   cancelledRequests.delete(uniqueId);
   responseAccumulators.delete(uniqueId);
-  // tabIdMap.delete(uniqueId); // Keep session open for retries
+  // tabIdMap entry intentionally kept — session stays open for user retries.
 }
 
 function processBuffer(buffer, uniqueId, adapter) {

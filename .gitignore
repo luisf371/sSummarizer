@@ -1,8 +1,9 @@
 .delete
-fork.md
 .sisyphus/
 .claude/
+.serena/
 plan_api_ignore/
+internaldocs/
 
 # === OS / System files ===
 .DS_Store

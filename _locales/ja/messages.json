@@ -83,6 +83,9 @@
     "message": "OpenRouter",
     "description": "OpenRouter option"
   },
+  "providerGlm": {
+    "message": "GLM (Coding Plan)"
+  },
   "helpProvider": {
     "message": "プリセットを選択すると推奨エンドポイントが自動入力されます。OpenAI互換プリセットは自動的に/completionsを追加します。",
     "description": "Provider help text"
@@ -104,7 +107,7 @@
     "description": "Model label"
   },
   "helpModel": {
-    "message": "要約を処理する正確なモデル識別子を選択してください（例：gpt-4o-mini, claude-3.5-sonnet）。",
+    "message": "要約を処理する正確なモデル識別子を選択してください（例：gpt5.2, claude-4.6-sonnet）。",
     "description": "Model help text"
   },
   "labelApiKey": {

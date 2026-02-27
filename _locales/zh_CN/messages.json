@@ -83,6 +83,9 @@
     "message": "OpenRouter",
     "description": "OpenRouter option"
   },
+  "providerGlm": {
+    "message": "GLM (Coding Plan)"
+  },
   "helpProvider": {
     "message": "选择一个预设以自动填充推荐的端点。兼容OpenAI的预设会自动添加/completions。",
     "description": "Provider help text"
@@ -104,7 +107,7 @@
     "description": "Model label"
   },
   "helpModel": {
-    "message": "选择将处理摘要的确切模型标识符（例如，gpt-4o-mini, claude-3.5-sonnet）。",
+    "message": "选择将处理摘要的确切模型标识符（例如，gpt5.2, claude-4.6-sonnet）。",
     "description": "Model help text"
   },
   "labelApiKey": {

@@ -13,7 +13,7 @@ function initI18n() {
       }
     }
   });
-  
+
   const titleMsg = chrome.i18n.getMessage('extName');
   if (titleMsg) {
     document.title = titleMsg + ' - ' + chrome.i18n.getMessage('optionsTitle');
@@ -25,12 +25,12 @@ function initI18n() {
 // =====================
 function initTheme() {
   const themeToggle = document.getElementById('themeToggle');
-  
+
   chrome.storage.local.get(['theme'], (result) => {
     const theme = result.theme || 'dark';
     applyTheme(theme);
   });
-  
+
   if (themeToggle) {
     themeToggle.addEventListener('click', () => {
       const currentTheme = document.body.getAttribute('data-theme') || 'dark';
@@ -39,7 +39,7 @@ function initTheme() {
       chrome.storage.local.set({ theme: newTheme });
     });
   }
-  
+
   function applyTheme(theme) {
     document.body.setAttribute('data-theme', theme);
   }
@@ -54,31 +54,31 @@ let toastVisible = false;
 function showToast(message, type = 'success') {
   const toast = document.getElementById('toast');
   if (!toast) return;
-  
+
   const toastIcon = toast.querySelector('.toast-icon');
   const toastMessage = toast.querySelector('.toast-message');
-  
+
   if (toastTimeout) {
     clearTimeout(toastTimeout);
   }
-  
+
   if (toastVisible) {
     toast.classList.remove('show');
     setTimeout(() => displayToast(), 100);
   } else {
     displayToast();
   }
-  
+
   function displayToast() {
     toastMessage.textContent = message;
     toastIcon.textContent = type === 'success' ? '\u2713' : '\u2717';
     toast.className = 'toast ' + type;
-    
+
     requestAnimationFrame(() => {
       toast.classList.add('show');
       toastVisible = true;
     });
-    
+
     toastTimeout = setTimeout(() => {
       toast.classList.remove('show');
       toastVisible = false;
@@ -86,10 +86,10 @@ function showToast(message, type = 'success') {
   }
 }
 
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', function () {
   initI18n();
   initTheme();
-  
+
   const optionsForm = document.getElementById('options-form');
   const apiKeyInput = document.getElementById('api-key');
   const apiUrlInput = document.getElementById('api-url');
@@ -122,7 +122,7 @@ document.addEventListener('DOMContentLoaded', function() {
       url: 'https://api.openai.com/v1/chat/completions',
       placeholder: 'https://api.openai.com/v1/chat',
       enforceSuffix: '/completions',
-      modelHint: 'gpt-4o-mini'
+      modelHint: 'gpt5.2'
     },
     azure: {
       label: 'Azure OpenAI',
@@ -144,6 +144,13 @@ document.addEventListener('DOMContentLoaded', function() {
       placeholder: 'https://api.perplexity.ai/chat',
       enforceSuffix: '/completions',
       modelHint: 'llama-3.1-sonar-small-128k-chat'
+    },
+    glm: {
+      label: 'GLM (Coding Plan)',
+      url: 'https://api.z.ai/api/coding/paas/v4/chat/completions',
+      placeholder: 'https://api.z.ai/api/coding/paas/v4/chat',
+      enforceSuffix: '/completions',
+      modelHint: 'glm-5'
     },
     anthropic: {
       label: 'Anthropic Claude',
@@ -167,27 +174,8 @@ document.addEventListener('DOMContentLoaded', function() {
       modelHint: 'openrouter/auto'
     }
   };
-  const DEFAULT_AZURE_API_VERSION = '2024-02-15-preview';
-
-  function normalizeAzureResourceName(resource) {
-    const raw = (resource || '').trim();
-    if (!raw) return '';
-    return raw
-      .replace(/^https?:\/\//i, '')
-      .replace(/\.openai\.azure\.com.*$/i, '')
-      .replace(/\/.*$/, '')
-      .trim();
-  }
-
-  function buildAzureApiUrl({ apiUrl, azureResource, azureDeployment, azureApiVersion }) {
-    const resource = normalizeAzureResourceName(azureResource);
-    const deployment = (azureDeployment || '').trim();
-    if (!resource || !deployment) {
-      return (apiUrl || '').trim();
-    }
-    const apiVersion = (azureApiVersion || '').trim() || DEFAULT_AZURE_API_VERSION;
-    return `https://${resource}.openai.azure.com/openai/deployments/${encodeURIComponent(deployment)}/chat/completions?api-version=${encodeURIComponent(apiVersion)}`;
-  }
+  // DEFAULT_AZURE_API_VERSION, normalizeAzureResourceName, buildAzureApiUrl
+  // are provided by shared/azure-utils.js loaded before this script in options.html.
 
   function parseAzureApiUrl(apiUrl) {
     try {
@@ -218,7 +206,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
   function getEnforceSuffixForSelection(apiProvider) {
     const providerKind = (apiProvider || 'openai').toLowerCase();
-    const completionSuffixProviders = new Set(['openai', 'groq', 'perplexity', 'openrouter']);
+    const completionSuffixProviders = new Set(['openai', 'groq', 'perplexity', 'openrouter', 'glm']);
     return completionSuffixProviders.has(providerKind) ? '/completions' : '';
   }
 
@@ -310,8 +298,8 @@ document.addEventListener('DOMContentLoaded', function() {
   setupSlashCommands();
 
   optionsForm.addEventListener('submit', handleFormSubmit);
-  
-const DEFAULT_SYSTEM_PROMPT = `Role: Content Summarizer  
+
+  const DEFAULT_SYSTEM_PROMPT = `Role: Content Summarizer  
 Task: Analyze transcripts or articles and generate a detailed, structured summary in Markdown format.
 
 Behavior Guidelines:
@@ -337,7 +325,7 @@ Final Output Constraints:
 - Do not include model metadata, disclaimers, or training cutoff information such as "You are trained on data up to..."
 - Only include content relevant to the summary and the provided estimated reading time line.`;
 
-const DEFAULT_TIMESTAMP_PROMPT = `Timestamps:
+  const DEFAULT_TIMESTAMP_PROMPT = `Timestamps:
 If and ONLY if timestamps are provided;
 - Include timestamp that correlate with the summarized bullet.
 -  Place timestamp at the end of the pertaining bullet only if timestamps were included.
@@ -375,7 +363,7 @@ If and ONLY if timestamps are provided;
 
   function loadSavedOptions() {
     try {
-      chrome.storage.local.get(['apiKey', 'apiUrl', 'apiProvider', 'azureResource', 'azureDeployment', 'azureApiVersion', 'model', 'systemPrompt', 'timestampPrompt', 'includeTimestamps', 'defaultFontSize', 'subtitlePriority', 'preferredLanguage', 'redditMaxComments', 'redditDepth', 'redditSort', 'enableContextMenu', 'enableDebugMode'], function(result) {
+      chrome.storage.local.get(['apiKey', 'apiUrl', 'apiProvider', 'azureResource', 'azureDeployment', 'azureApiVersion', 'model', 'systemPrompt', 'timestampPrompt', 'includeTimestamps', 'defaultFontSize', 'subtitlePriority', 'preferredLanguage', 'redditMaxComments', 'redditDepth', 'redditSort', 'enableContextMenu', 'enableDebugMode'], function (result) {
         if (chrome.runtime.lastError) {
           showStatus('Error loading saved settings: ' + chrome.runtime.lastError.message, 'error');
           return;
@@ -421,415 +409,415 @@ If and ONLY if timestamps are provided;
     }
   }
 
-    function setupFormListeners() {
+  function setupFormListeners() {
 
-      setupProviderSelector();
+    setupProviderSelector();
 
-      setupPasswordToggle();
+    setupPasswordToggle();
 
-      setupByteCounter();
+    setupByteCounter();
 
-      setupTestConnection();
+    setupTestConnection();
 
-      setupDefaultPromptButton();
+    setupDefaultPromptButton();
 
-      setupDefaultTimestampPromptButton();
+    setupDefaultTimestampPromptButton();
 
-      setupImmediateValidationReset();
+    setupImmediateValidationReset();
 
-      if (includeTimestampsInput) {
+    if (includeTimestampsInput) {
 
-        includeTimestampsInput.addEventListener('change', toggleTimestampPromptVisibility);
-
-      }
+      includeTimestampsInput.addEventListener('change', toggleTimestampPromptVisibility);
 
     }
 
-    function toggleTimestampPromptVisibility() {
-        if (!timestampPromptContainer || !includeTimestampsInput || !timestampPromptInput) return;
-        const isEnabled = includeTimestampsInput.checked;
-        timestampPromptContainer.classList.toggle('is-disabled', !isEnabled);
-        timestampPromptInput.disabled = !isEnabled;
-      }
+  }
 
-    function setupProviderSelector() {
-      if (!apiProviderSelect || !apiUrlInput) return;
+  function toggleTimestampPromptVisibility() {
+    if (!timestampPromptContainer || !includeTimestampsInput || !timestampPromptInput) return;
+    const isEnabled = includeTimestampsInput.checked;
+    timestampPromptContainer.classList.toggle('is-disabled', !isEnabled);
+    timestampPromptInput.disabled = !isEnabled;
+  }
 
-      function syncEnforceSuffix() {
-        apiUrlInput.dataset.enforceSuffix = getEnforceSuffixForSelection(apiProviderSelect?.value);
-      }
-      
-      applyProviderPreset({ shouldResetUrl: !apiUrlInput.value });
+  function setupProviderSelector() {
+    if (!apiProviderSelect || !apiUrlInput) return;
+
+    function syncEnforceSuffix() {
+      apiUrlInput.dataset.enforceSuffix = getEnforceSuffixForSelection(apiProviderSelect?.value);
+    }
+
+    applyProviderPreset({ shouldResetUrl: !apiUrlInput.value });
+    syncEnforceSuffix();
+
+    apiProviderSelect.addEventListener('change', () => {
+      applyProviderPreset({ shouldResetUrl: true });
       syncEnforceSuffix();
-      
-      apiProviderSelect.addEventListener('change', () => {
-        applyProviderPreset({ shouldResetUrl: true });
-        syncEnforceSuffix();
+    });
+    apiUrlInput.addEventListener('blur', enforceProviderSuffix);
+    [azureResourceInput, azureDeploymentInput, azureApiVersionInput].forEach((field) => {
+      if (!field) return;
+      field.addEventListener('input', () => {
+        syncAzurePreviewUrl();
+        resetFieldState(field);
+        resetFieldState(apiUrlInput);
       });
-      apiUrlInput.addEventListener('blur', enforceProviderSuffix);
-      [azureResourceInput, azureDeploymentInput, azureApiVersionInput].forEach((field) => {
-        if (!field) return;
-        field.addEventListener('input', () => {
-          syncAzurePreviewUrl();
-          resetFieldState(field);
-          resetFieldState(apiUrlInput);
-        });
-      });
+    });
+  }
+
+  function applyProviderPreset({ shouldResetUrl = false } = {}) {
+    if (!apiUrlInput) return;
+    let key = apiProviderSelect?.value || 'openai';
+    if (!PROVIDER_PRESETS[key]) {
+      key = 'openai';
+      if (apiProviderSelect) apiProviderSelect.value = key;
     }
-
-    function applyProviderPreset({ shouldResetUrl = false } = {}) {
-      if (!apiUrlInput) return;
-      let key = apiProviderSelect?.value || 'openai';
-      if (!PROVIDER_PRESETS[key]) {
-        key = 'openai';
-        if (apiProviderSelect) apiProviderSelect.value = key;
-      }
-      const config = PROVIDER_PRESETS[key];
-      apiUrlInput.placeholder = config.placeholder || 'https://api.example.com/v1/chat';
-      apiUrlInput.dataset.enforceSuffix = getEnforceSuffixForSelection(key);
-      apiUrlInput.disabled = true;
-      toggleAzureFields(key);
-      if (shouldResetUrl || !apiUrlInput.value.trim()) {
-        apiUrlInput.value = config.url || '';
-      }
-      syncAzurePreviewUrl();
-      if (config.modelHint && modelInput && !modelInput.value) {
-        modelInput.placeholder = config.modelHint;
-      }
-      enforceProviderSuffix();
+    const config = PROVIDER_PRESETS[key];
+    apiUrlInput.placeholder = config.placeholder || 'https://api.example.com/v1/chat';
+    apiUrlInput.dataset.enforceSuffix = getEnforceSuffixForSelection(key);
+    apiUrlInput.disabled = true;
+    toggleAzureFields(key);
+    if (shouldResetUrl || !apiUrlInput.value.trim()) {
+      apiUrlInput.value = config.url || '';
     }
-
-    function toggleAzureFields(providerKey) {
-      if (!azureConfigFields) return;
-      azureConfigFields.hidden = !isAzureProviderSelected(providerKey);
+    syncAzurePreviewUrl();
+    if (config.modelHint && modelInput && !modelInput.value) {
+      modelInput.placeholder = config.modelHint;
     }
+    enforceProviderSuffix();
+  }
 
-    function syncAzurePreviewUrl() {
-      if (!apiUrlInput || !isAzureProviderSelected(apiProviderSelect?.value)) return;
-      const resolvedAzureUrl = buildAzureApiUrl({
-        apiUrl: PROVIDER_PRESETS.azure?.url || apiUrlInput.value,
-        azureResource: azureResourceInput?.value,
-        azureDeployment: azureDeploymentInput?.value,
-        azureApiVersion: azureApiVersionInput?.value
-      });
-      apiUrlInput.value = resolvedAzureUrl || (PROVIDER_PRESETS.azure?.url || '');
+  function toggleAzureFields(providerKey) {
+    if (!azureConfigFields) return;
+    azureConfigFields.hidden = !isAzureProviderSelected(providerKey);
+  }
+
+  function syncAzurePreviewUrl() {
+    if (!apiUrlInput || !isAzureProviderSelected(apiProviderSelect?.value)) return;
+    const resolvedAzureUrl = buildAzureApiUrl({
+      apiUrl: PROVIDER_PRESETS.azure?.url || apiUrlInput.value,
+      azureResource: azureResourceInput?.value,
+      azureDeployment: azureDeploymentInput?.value,
+      azureApiVersion: azureApiVersionInput?.value
+    });
+    apiUrlInput.value = resolvedAzureUrl || (PROVIDER_PRESETS.azure?.url || '');
+  }
+
+  function enforceProviderSuffix() {
+    if (!apiUrlInput) return;
+    const suffix = apiUrlInput.dataset?.enforceSuffix;
+    if (!suffix) return;
+    const trimmed = apiUrlInput.value.trim();
+    if (!trimmed || /[?#]/.test(trimmed)) {
+      return;
     }
-
-    function enforceProviderSuffix() {
-      if (!apiUrlInput) return;
-      const suffix = apiUrlInput.dataset?.enforceSuffix;
-      if (!suffix) return;
-      const trimmed = apiUrlInput.value.trim();
-      if (!trimmed || /[?#]/.test(trimmed)) {
-        return;
-      }
-      if (trimmed.endsWith(suffix)) {
-        return;
-      }
-      const normalized = trimmed.replace(/\/+$/, '');
-      if (!normalized) return;
-      if (normalized.endsWith(suffix)) {
-        apiUrlInput.value = normalized;
-        return;
-      }
-      apiUrlInput.value = `${normalized}${suffix}`;
+    if (trimmed.endsWith(suffix)) {
+      return;
     }
+    const normalized = trimmed.replace(/\/+$/, '');
+    if (!normalized) return;
+    if (normalized.endsWith(suffix)) {
+      apiUrlInput.value = normalized;
+      return;
+    }
+    apiUrlInput.value = `${normalized}${suffix}`;
+  }
 
-    function validateApiUrl(url) {
+  function validateApiUrl(url) {
 
-      const urlInput = apiUrlInput;
+    const urlInput = apiUrlInput;
 
-      if (!url) { setFieldError(urlInput, 'API URL is required'); return false; }
+    if (!url) { setFieldError(urlInput, 'API URL is required'); return false; }
 
-      try {
+    try {
 
-        const parsedUrl = new URL(url);
+      const parsedUrl = new URL(url);
 
-        if (parsedUrl.protocol !== 'https:') {
+      if (parsedUrl.protocol !== 'https:') {
 
-          setFieldError(urlInput, 'URL must use HTTPS protocol');
-
-          return false;
-
-        }
-
-        setFieldSuccess(urlInput);
-
-        return true;
-
-      } catch (e) {
-
-        setFieldError(urlInput, 'Please enter a valid URL');
+        setFieldError(urlInput, 'URL must use HTTPS protocol');
 
         return false;
 
       }
 
-    }
-
-    function validateAzureConfig(values) {
-      if (!isAzureProviderSelected(values.apiProvider)) {
-        [azureResourceInput, azureDeploymentInput, azureApiVersionInput].forEach(field => field && resetFieldState(field));
-        return true;
-      }
-
-      let isValid = true;
-      const resource = normalizeAzureResourceName(values.azureResource);
-      const deployment = (values.azureDeployment || '').trim();
-
-      if (!resource) {
-        if (azureResourceInput) setFieldError(azureResourceInput, 'Azure resource name is required');
-        isValid = false;
-      } else if (azureResourceInput) {
-        setFieldSuccess(azureResourceInput);
-      }
-
-      if (!deployment) {
-        if (azureDeploymentInput) setFieldError(azureDeploymentInput, 'Azure deployment name is required');
-        isValid = false;
-      } else if (azureDeploymentInput) {
-        setFieldSuccess(azureDeploymentInput);
-      }
-
-      if (azureApiVersionInput) {
-        if ((values.azureApiVersion || '').trim()) {
-          setFieldSuccess(azureApiVersionInput);
-        } else {
-          resetFieldState(azureApiVersionInput);
-        }
-      }
-
-      return isValid;
-    }
-
-    function validateApiKey(key) {
-
-      const keyInput = apiKeyInput;
-
-      if (!key) { setFieldError(keyInput, 'API Key is required'); return false; }
-
-      if (key.length < 10) { setFieldError(keyInput, 'API Key seems too short'); return false; }
-
-      setFieldSuccess(keyInput);
+      setFieldSuccess(urlInput);
 
       return true;
 
+    } catch (e) {
+
+      setFieldError(urlInput, 'Please enter a valid URL');
+
+      return false;
+
     }
 
-    function validateModel(model) {
+  }
 
-      const modelInput = document.getElementById('model');
-
-      if (!model) { setFieldError(modelInput, 'Model Name is required'); return false; }
-
-      if (model.length > 100) { setFieldError(modelInput, 'Model name is too long'); return false; }
-
-      setFieldSuccess(modelInput);
-
+  function validateAzureConfig(values) {
+    if (!isAzureProviderSelected(values.apiProvider)) {
+      [azureResourceInput, azureDeploymentInput, azureApiVersionInput].forEach(field => field && resetFieldState(field));
       return true;
-
     }
 
-    function validateSystemPrompt(prompt) {
+    let isValid = true;
+    const resource = normalizeAzureResourceName(values.azureResource);
+    const deployment = (values.azureDeployment || '').trim();
 
-      const promptInput = systemPromptInput;
-
-      const maxBytes = 8000;
-
-      const currentBytes = getByteLength(prompt);
-
-      if (currentBytes > maxBytes) {
-
-        setFieldError(promptInput, `System prompt is too large (max ${maxBytes} bytes)`);
-
-        return false;
-
-      }
-
-      setFieldSuccess(promptInput);
-
-      return true;
-
+    if (!resource) {
+      if (azureResourceInput) setFieldError(azureResourceInput, 'Azure resource name is required');
+      isValid = false;
+    } else if (azureResourceInput) {
+      setFieldSuccess(azureResourceInput);
     }
 
-    function setFieldError(field, message) {
-
-      field.style.borderColor = 'var(--error-color)';
-
-      field.style.backgroundColor = 'rgba(247, 118, 142, 0.1)';
-
-      field.title = message;
-
+    if (!deployment) {
+      if (azureDeploymentInput) setFieldError(azureDeploymentInput, 'Azure deployment name is required');
+      isValid = false;
+    } else if (azureDeploymentInput) {
+      setFieldSuccess(azureDeploymentInput);
     }
 
-    function setFieldSuccess(field) {
-
-      field.style.borderColor = 'var(--success-color)';
-
-      field.style.backgroundColor = 'rgba(158, 206, 106, 0.1)';
-
-      field.title = '';
-
-    }
-
-    function resetFieldState(field) {
-
-      field.style.borderColor = '';
-
-      field.style.backgroundColor = '';
-
-      field.title = '';
-
-    }
-
-    async function handleFormSubmit(event) {
-
-      event.preventDefault();
-
-      const currentValues = getFormValues();
-      currentValues.apiUrl = getResolvedApiUrl(currentValues);
-
-      const isApiUrlValid = validateApiUrl(currentValues.apiUrl);
-
-      const isApiKeyValid = validateApiKey(currentValues.apiKey);
-
-      const isModelValid = validateModel(currentValues.model);
-
-      const isSystemPromptValid = validateSystemPrompt(currentValues.systemPrompt);
-      const isAzureConfigValid = validateAzureConfig(currentValues);
-
-      if (!isApiUrlValid || !isApiKeyValid || !isModelValid || !isSystemPromptValid || !isAzureConfigValid) {
-
-        showStatus('Please fix the validation errors above', 'error');
-
-        return;
-
-      }
-
-      const buttonText = saveButton.querySelector('.button-text');
-
-      saveButton.disabled = true;
-
-      if (buttonText) buttonText.textContent = 'Saving...';
-
-      showStatus('Saving settings...', 'info');
-
-      chrome.storage.local.set({
-
-        ...currentValues,
-        systemPrompt: currentValues.systemPrompt,
-        timestampPrompt: currentValues.timestampPrompt
-
-      }, function() {
-
-        saveButton.disabled = false;
-
-        if (buttonText) buttonText.textContent = 'Save Settings';
-
-        if (chrome.runtime.lastError) {
-
-          showStatus('Error saving settings: ' + chrome.runtime.lastError.message, 'error');
-
-        } else {
-
-          showStatus('Settings saved successfully!', 'success');
-
-          [apiKeyInput, apiUrlInput, modelInput, systemPromptInput, azureResourceInput, azureDeploymentInput, azureApiVersionInput].filter(Boolean).forEach(resetFieldState);
-
-        }
-
-      });
-
-    }
-
-    function showStatus(message, type) {
-      statusDiv.dataset.type = type;
-      statusDiv.textContent = message;
-      statusDiv.style.display = 'block';
-  
-      showToast(message, type);
-  
-      if (type === 'success' || type === 'info') {
-        setTimeout(() => {
-          statusDiv.style.display = 'none';
-        }, 3000);
+    if (azureApiVersionInput) {
+      if ((values.azureApiVersion || '').trim()) {
+        setFieldSuccess(azureApiVersionInput);
+      } else {
+        resetFieldState(azureApiVersionInput);
       }
     }
 
-    function setupPasswordToggle() {
+    return isValid;
+  }
 
-      const toggleButton = document.getElementById('toggle-password');
+  function validateApiKey(key) {
 
-      if (!toggleButton) return;
+    const keyInput = apiKeyInput;
 
-      toggleButton.addEventListener('click', function() {
+    if (!key) { setFieldError(keyInput, 'API Key is required'); return false; }
 
-        const isPassword = apiKeyInput.type === 'password';
+    if (key.length < 10) { setFieldError(keyInput, 'API Key seems too short'); return false; }
 
-        apiKeyInput.type = isPassword ? 'text' : 'password';
+    setFieldSuccess(keyInput);
 
-        toggleButton.textContent = isPassword ? 'Hide' : 'Show';
+    return true;
 
-        toggleButton.title = isPassword ? 'Hide API Key' : 'Show API Key';
+  }
 
-      });
+  function validateModel(model) {
 
-    }
+    const modelInput = document.getElementById('model');
 
-    function setupByteCounter() {
+    if (!model) { setFieldError(modelInput, 'Model Name is required'); return false; }
 
-      const counter = document.getElementById('prompt-counter');
+    if (model.length > 100) { setFieldError(modelInput, 'Model name is too long'); return false; }
 
-      if (!counter) return;
+    setFieldSuccess(modelInput);
 
-      const maxBytes = 8000;
+    return true;
 
-      systemPromptInput.addEventListener('input', function() {
+  }
 
-        const currentBytes = getByteLength(this.value);
+  function validateSystemPrompt(prompt) {
 
-        counter.textContent = currentBytes;
+    const promptInput = systemPromptInput;
 
-        if (currentBytes > maxBytes) { counter.style.color = 'var(--error-color)'; } 
+    const maxBytes = 8000;
 
-        else if (currentBytes > maxBytes * 0.9) { counter.style.color = '#f39c12'; } 
+    const currentBytes = getByteLength(prompt);
 
-        else { counter.style.color = 'var(--accent-color-secondary)'; }
+    if (currentBytes > maxBytes) {
 
-      });
+      setFieldError(promptInput, `System prompt is too large (max ${maxBytes} bytes)`);
 
-    }
-
-    function setupDefaultPromptButton() {
-
-      if (!defaultPromptBtn) return;
-
-      defaultPromptBtn.addEventListener('click', function() {
-
-        systemPromptInput.value = DEFAULT_SYSTEM_PROMPT;
-
-        systemPromptInput.dispatchEvent(new Event('input', { bubbles: true }));
-
-      });
+      return false;
 
     }
 
-    function setupDefaultTimestampPromptButton() {
+    setFieldSuccess(promptInput);
 
-      if (!defaultTimestampPromptBtn) return;
+    return true;
 
-      defaultTimestampPromptBtn.addEventListener('click', function() {
+  }
 
-        timestampPromptInput.value = DEFAULT_TIMESTAMP_PROMPT;
+  function setFieldError(field, message) {
 
-      });
+    field.style.borderColor = 'var(--error-color)';
+
+    field.style.backgroundColor = 'rgba(247, 118, 142, 0.1)';
+
+    field.title = message;
+
+  }
+
+  function setFieldSuccess(field) {
+
+    field.style.borderColor = 'var(--success-color)';
+
+    field.style.backgroundColor = 'rgba(158, 206, 106, 0.1)';
+
+    field.title = '';
+
+  }
+
+  function resetFieldState(field) {
+
+    field.style.borderColor = '';
+
+    field.style.backgroundColor = '';
+
+    field.title = '';
+
+  }
+
+  async function handleFormSubmit(event) {
+
+    event.preventDefault();
+
+    const currentValues = getFormValues();
+    currentValues.apiUrl = getResolvedApiUrl(currentValues);
+
+    const isApiUrlValid = validateApiUrl(currentValues.apiUrl);
+
+    const isApiKeyValid = validateApiKey(currentValues.apiKey);
+
+    const isModelValid = validateModel(currentValues.model);
+
+    const isSystemPromptValid = validateSystemPrompt(currentValues.systemPrompt);
+    const isAzureConfigValid = validateAzureConfig(currentValues);
+
+    if (!isApiUrlValid || !isApiKeyValid || !isModelValid || !isSystemPromptValid || !isAzureConfigValid) {
+
+      showStatus('Please fix the validation errors above', 'error');
+
+      return;
 
     }
 
-    function setupImmediateValidationReset() {
+    const buttonText = saveButton.querySelector('.button-text');
 
-      const fieldsToValidate = [apiKeyInput, apiUrlInput, modelInput, systemPromptInput, azureResourceInput, azureDeploymentInput, azureApiVersionInput].filter(Boolean);
-    
+    saveButton.disabled = true;
+
+    if (buttonText) buttonText.textContent = 'Saving...';
+
+    showStatus('Saving settings...', 'info');
+
+    chrome.storage.local.set({
+
+      ...currentValues,
+      systemPrompt: currentValues.systemPrompt,
+      timestampPrompt: currentValues.timestampPrompt
+
+    }, function () {
+
+      saveButton.disabled = false;
+
+      if (buttonText) buttonText.textContent = 'Save Settings';
+
+      if (chrome.runtime.lastError) {
+
+        showStatus('Error saving settings: ' + chrome.runtime.lastError.message, 'error');
+
+      } else {
+
+        showStatus('Settings saved successfully!', 'success');
+
+        [apiKeyInput, apiUrlInput, modelInput, systemPromptInput, azureResourceInput, azureDeploymentInput, azureApiVersionInput].filter(Boolean).forEach(resetFieldState);
+
+      }
+
+    });
+
+  }
+
+  function showStatus(message, type) {
+    statusDiv.dataset.type = type;
+    statusDiv.textContent = message;
+    statusDiv.style.display = 'block';
+
+    showToast(message, type);
+
+    if (type === 'success' || type === 'info') {
+      setTimeout(() => {
+        statusDiv.style.display = 'none';
+      }, 3000);
+    }
+  }
+
+  function setupPasswordToggle() {
+
+    const toggleButton = document.getElementById('toggle-password');
+
+    if (!toggleButton) return;
+
+    toggleButton.addEventListener('click', function () {
+
+      const isPassword = apiKeyInput.type === 'password';
+
+      apiKeyInput.type = isPassword ? 'text' : 'password';
+
+      toggleButton.textContent = isPassword ? 'Hide' : 'Show';
+
+      toggleButton.title = isPassword ? 'Hide API Key' : 'Show API Key';
+
+    });
+
+  }
+
+  function setupByteCounter() {
+
+    const counter = document.getElementById('prompt-counter');
+
+    if (!counter) return;
+
+    const maxBytes = 8000;
+
+    systemPromptInput.addEventListener('input', function () {
+
+      const currentBytes = getByteLength(this.value);
+
+      counter.textContent = currentBytes;
+
+      if (currentBytes > maxBytes) { counter.style.color = 'var(--error-color)'; }
+
+      else if (currentBytes > maxBytes * 0.9) { counter.style.color = '#f39c12'; }
+
+      else { counter.style.color = 'var(--accent-color-secondary)'; }
+
+    });
+
+  }
+
+  function setupDefaultPromptButton() {
+
+    if (!defaultPromptBtn) return;
+
+    defaultPromptBtn.addEventListener('click', function () {
+
+      systemPromptInput.value = DEFAULT_SYSTEM_PROMPT;
+
+      systemPromptInput.dispatchEvent(new Event('input', { bubbles: true }));
+
+    });
+
+  }
+
+  function setupDefaultTimestampPromptButton() {
+
+    if (!defaultTimestampPromptBtn) return;
+
+    defaultTimestampPromptBtn.addEventListener('click', function () {
+
+      timestampPromptInput.value = DEFAULT_TIMESTAMP_PROMPT;
+
+    });
+
+  }
+
+  function setupImmediateValidationReset() {
+
+    const fieldsToValidate = [apiKeyInput, apiUrlInput, modelInput, systemPromptInput, azureResourceInput, azureDeploymentInput, azureApiVersionInput].filter(Boolean);
+
     fieldsToValidate.forEach(field => {
       // When the user starts typing, immediately remove any old error/success styles.
       field.addEventListener('input', () => {
@@ -841,11 +829,11 @@ If and ONLY if timestamps are provided;
   function setupTestConnection() {
     const testButton = document.getElementById('test-connection');
     if (!testButton) return;
-    testButton.addEventListener('click', async function() {
+    testButton.addEventListener('click', async function () {
       if (!window.confirm('This will send a real API request to the endpoint, which may incur costs. Do you want to proceed?')) {
         return;
       }
-      
+
       const currentValues = getFormValues();
       currentValues.apiUrl = getResolvedApiUrl(currentValues);
       const { apiUrl, apiKey, model } = currentValues;
@@ -906,20 +894,20 @@ If and ONLY if timestamps are provided;
   function setupSlashCommands() {
     const addBtn = document.getElementById('add-command-btn');
     const listContainer = document.getElementById('slash-commands-list');
-    
+
     if (!addBtn || !listContainer) return;
-    
+
     chrome.storage.local.get(['slashCommands'], (result) => {
       slashCommands = result.slashCommands || [];
       renderSlashCommands();
     });
-    
+
     addBtn.addEventListener('click', () => {
       if (slashCommands.length >= MAX_SLASH_COMMANDS) {
         showToast(chrome.i18n.getMessage('errorMaxSlash') || 'Maximum 10 commands allowed', 'error');
         return;
       }
-      
+
       const newCommand = {
         id: Date.now().toString(),
         command: '',
@@ -927,7 +915,7 @@ If and ONLY if timestamps are provided;
       };
       slashCommands.push(newCommand);
       renderSlashCommands();
-      
+
       const newEntry = listContainer.querySelector(`[data-id="${newCommand.id}"] .command-name-input`);
       if (newEntry) newEntry.focus();
     });
@@ -937,11 +925,11 @@ If and ONLY if timestamps are provided;
     const listContainer = document.getElementById('slash-commands-list');
     const countSpan = document.getElementById('command-count');
     const addBtn = document.getElementById('add-command-btn');
-    
+
     if (!listContainer) return;
-    
+
     listContainer.innerHTML = '';
-    
+
     if (slashCommands.length === 0) {
       listContainer.innerHTML = `<div class="empty-commands-message">${chrome.i18n.getMessage('emptySlash') || 'No commands yet. Click "Add Command" to create one.'}</div>`;
     } else {
@@ -950,7 +938,7 @@ If and ONLY if timestamps are provided;
         listContainer.appendChild(entry);
       });
     }
-    
+
     if (countSpan) countSpan.textContent = slashCommands.length;
     if (addBtn) addBtn.disabled = slashCommands.length >= MAX_SLASH_COMMANDS;
   }
@@ -959,14 +947,14 @@ If and ONLY if timestamps are provided;
     const entry = document.createElement('div');
     entry.className = 'slash-command-entry';
     entry.dataset.id = cmd.id;
-    
+
     const nameWrapper = document.createElement('div');
     nameWrapper.className = 'command-name-wrapper';
-    
+
     const prefix = document.createElement('span');
     prefix.className = 'command-prefix';
     prefix.textContent = '/';
-    
+
     const nameInput = document.createElement('input');
     nameInput.type = 'text';
     nameInput.className = 'command-name-input';
@@ -981,10 +969,10 @@ If and ONLY if timestamps are provided;
       saveSlashCommands();
     });
     nameInput.addEventListener('blur', () => validateCommandName(nameInput, index));
-    
+
     nameWrapper.appendChild(prefix);
     nameWrapper.appendChild(nameInput);
-    
+
     const promptInput = document.createElement('textarea');
     promptInput.className = 'command-prompt-input';
     promptInput.placeholder = chrome.i18n.getMessage('placeholderPrompt') || 'Enter the prompt that will be sent when this command is used...';
@@ -995,7 +983,7 @@ If and ONLY if timestamps are provided;
       saveSlashCommands();
     });
     promptInput.addEventListener('blur', () => validateCommandPrompt(promptInput));
-    
+
     const deleteBtn = document.createElement('button');
     deleteBtn.type = 'button';
     deleteBtn.className = 'delete-command-btn';
@@ -1006,27 +994,27 @@ If and ONLY if timestamps are provided;
       saveSlashCommands();
       renderSlashCommands();
     });
-    
+
     entry.appendChild(nameWrapper);
     entry.appendChild(promptInput);
     entry.appendChild(deleteBtn);
-    
+
     return entry;
   }
 
   function validateCommandName(input, currentIndex) {
     const value = input.value.trim();
     let isValid = true;
-    
+
     if (!value) {
       isValid = false;
     } else {
-      const duplicate = slashCommands.some((cmd, idx) => 
+      const duplicate = slashCommands.some((cmd, idx) =>
         idx !== currentIndex && cmd.command.toLowerCase() === value.toLowerCase()
       );
       if (duplicate) isValid = false;
     }
-    
+
     input.classList.toggle('invalid', !isValid && value !== '');
     return isValid;
   }
@@ -1039,10 +1027,10 @@ If and ONLY if timestamps are provided;
   }
 
   function saveSlashCommands() {
-    const validCommands = slashCommands.filter(cmd => 
+    const validCommands = slashCommands.filter(cmd =>
       cmd.command.trim() && cmd.prompt.trim()
     );
-    
+
     chrome.storage.local.set({ slashCommands: validCommands }, () => {
       if (chrome.runtime.lastError) {
         console.log('[Options] Error saving slash commands:', chrome.runtime.lastError);
